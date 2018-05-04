@@ -256,9 +256,9 @@ c.LDAPAuthenticator.username_pattern = '[a-zA-Z0-9_.][a-zA-Z0-9_.-]{0,252}[a-zA-
 c.LDAPAuthenticator.username_pattern = '[a-zA-Z0-9_.][a-zA-Z0-9_.-]{8,20}[a-zA-Z0-9_.$-]?'
 ```
 
-### Putting it all together
+## Examples
 
-[FreeIPA](https://www.freeipa.org/page/Main_Page)
+FreeIPA
 
 ```python
 # freeipa example
@@ -276,7 +276,7 @@ c.LDAPAuthenticator.allow_nested_groups = True
 c.LDAPAuthenticator.username_pattern = '[a-zA-Z0-9_.][a-zA-Z0-9_.-]{0,252}[a-zA-Z0-9_.$-]?'
 ```
 
-[Active Directory](https://docs.microsoft.com/en-us/windows-server/identity/ad-ds/active-directory-domain-services)
+Active Directory
 
 ```python
 # active directory example

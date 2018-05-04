@@ -20,7 +20,7 @@ setup_args= dict(
     packages = ['ldapauthenticator'],
     install_requires= [ 
         'ldap3',
-        'jupyterhub'
+        'jupyterhub',
         'traitlets'
     ]
 )
