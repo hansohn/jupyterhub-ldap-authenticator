@@ -18,7 +18,7 @@ Unique features included in this project are as follows:
 - Establish ldap connections in read-only mode
 - Reduce ldap connection instantiation to a single connection
 - Support multiple ldap servers and allow configuration of pool_strategy
-- Support Jupyterhub `create_system_users` and `add_user_cmd` config functionality
+- Support Jupyterhub `create_system_users` and `add_user_cmd` config functionality (BUG)
 
 ## Installation
 
@@ -33,7 +33,7 @@ pip3 install git+https://github.com/hansohn/jupyterhub-ldap-authenticator.git
 To enable LDAPAuthenticator, add the following line to the Jupyterhub config file and extend configuration with the parameters listed below.
 
 ```python
-c.JupyterHub.authenticator_class = ldapauthenticator.LDAPAuthenticator()
+c.JupyterHub.authenticator_class = 'ldapauthenticator.LDAPAuthenticator'
 ```
 
 <dl>
@@ -262,7 +262,7 @@ FreeIPA
 
 ```python
 # freeipa example
-c.JupyterHub.authenticator_class = ldapauthenticator.LDAPAuthenticator()
+c.JupyterHub.authenticator_class = 'ldapauthenticator.LDAPAuthenticator'
 c.LDAPAuthenticator.server_hosts = ['ldaps://ldap1.example.com:636', 'ldaps://ldap2.example.com:636']
 c.LDAPAuthenticator.bind_user_dn = 'uid=imauser,cn=users,cn=accounts,dc=example,dc=com'
 c.LDAPAuthenticator.bind_user_password = 'imapassword'
@@ -280,7 +280,7 @@ Active Directory
 
 ```python
 # active directory example
-c.JupyterHub.authenticator_class = ldapauthenticator.LDAPAuthenticator()
+c.JupyterHub.authenticator_class = 'ldapauthenticator.LDAPAuthenticator'
 c.LDAPAuthenticator.server_hosts = ['ldaps://ldap1.example.com:636', 'ldaps://ldap2.example.com:636']
 c.LDAPAuthenticator.bind_user_dn = 'CN=imauser,CN=Users,DC=example,DC=com'
 c.LDAPAuthenticator.bind_user_password = 'imapassword'
