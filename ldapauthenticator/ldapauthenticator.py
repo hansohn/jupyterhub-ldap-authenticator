@@ -5,6 +5,7 @@ from jupyterhub.auth import LocalAuthenticator
 import ldap3 
 from ldap3.utils.conv import escape_filter_chars
 import re
+import sys
 from tornado import gen
 from traitlets import Any, Int, Bool, Bytes, Int, List, Unicode, Union, default, observe
 
@@ -197,6 +198,58 @@ class LDAPAuthenticator(LocalAuthenticator):
         if not change['new']:
             self.username_regex = None
         self.username_regex = re.compile(change['new'])
+
+    create_domain_user = Bool(
+        default_value=False,
+        config=True,
+        help="""
+        If set to True, will attempt to add a domain user account to the local 
+        machine if the user account does not exist already.
+        """
+    )
+
+    create_domain_user_cmd = Command(
+        config=True,
+        help="""
+        Command to add domain account to local machine.
+        """
+    )
+    @default('create_domain_user_cmd')
+    def _default_create_domain_user_cmd(self):
+        if sys.platform == 'linux':
+            return ['mkhomedir_helper']
+        else:
+            self.log.debug("Not sure how to add domain user to the '%s' platform", sys.platform)
+            return ['']
+
+    async def add_user(self, user):
+        user_exists = await maybe_future(self.domain_user_exists(user.name))
+        if not user_exists:
+            if self.create_domain_user:
+                await maybe_future(self.add_domain_user(user.name))
+            else:
+                raise KeyError("Domain user %s does not exists locally." % user.name)
+        await maybe_future(super().add_user(username))
+
+    def domain_user_exists(username):
+        import pwd
+        usernames = list()
+        users = pwd.getpwall()
+        for user in users:
+            usernames.extend([user[0]])
+        if username in usernames:
+            return True
+        else:
+            return False
+
+    def add_domain_user(self, username)
+        cmd = [ arg.replace('USERNAME', username) for arg in selfcreate_domain_user_cmd ] + [username]
+        self.log.info("Creating user: %s", ' '.join(map(pipes.quote, cmd)))
+        p = Popen(cmd, stdout=PIPE, stderr=STDOUT)
+        p.wait()
+        if p.returncode:
+            err = p.stdout.read().decode('utf8', 'replace')
+            raise RuntimeError("Failed to create system user %s: %s" % (username, err))
 
     def normalize_username(self, username):
         username = username.lower()

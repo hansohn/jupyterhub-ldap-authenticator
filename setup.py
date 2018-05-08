@@ -16,7 +16,8 @@ setup_args= dict(
     keywords = ['Interactive', 'Interpreter', 'Shell', 'Web'],
     url = 'https://github.com/hansohn/jupyterhub-ldap-authenticator',
     author ='Ryan Hansohn',
-    license = '',
+    author_email = 'info@imnorobot.com',
+    license = 'MIT',
     packages = ['ldapauthenticator'],
     install_requires= [ 
         'ldap3',
