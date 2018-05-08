@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 import asyncio
+from async_generator import async_generator
 import concurrent.futures
 import copy
 import inspect
