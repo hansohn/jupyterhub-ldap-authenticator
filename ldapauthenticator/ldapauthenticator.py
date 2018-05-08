@@ -16,7 +16,7 @@ from traitlets import Any, Int, Bool, Bytes, Int, List, Unicode, Union, default,
 from jupyterhub.utils import maybe_future
 from jupyterhub.traitlets import Command
 
-class LDAPAuthenticator(LocalAuthenticator):
+class LDAPAuthenticator(Authenticator):
     server_hosts = Union(
         [List(),Unicode()],
         config=True,
