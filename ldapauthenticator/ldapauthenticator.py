@@ -1,13 +1,16 @@
 # -*- coding: utf-8 -*-
 
 import copy
-from jupyterhub.auth import LocalAuthenticator
+from jupyterhub.auth import LocalAuthenticator, Authenticator 
 import ldap3 
 from ldap3.utils.conv import escape_filter_chars
 import re
 import sys
 from tornado import gen
 from traitlets import Any, Int, Bool, Bytes, Int, List, Unicode, Union, default, observe
+
+from jupyterhub.utils import maybe_future
+from jupyterhub.traitlets import Command
 
 class LDAPAuthenticator(LocalAuthenticator):
     server_hosts = Union(
