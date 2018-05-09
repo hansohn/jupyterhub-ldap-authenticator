@@ -1,19 +1,18 @@
 # -*- coding: utf-8 -*-
 
-import asyncio
-from async_generator import async_generator
-import concurrent.futures
 import copy
-import inspect
-from jupyterhub.auth import LocalAuthenticator, Authenticator 
+from jupyterhub.auth import Authenticator 
 import ldap3 
 from ldap3.utils.conv import escape_filter_chars
+import os
+import pipes
+import pwd
 import re
 import sys
+from subprocess import Popen, PIPE, STDOUT
 from tornado import gen
 from traitlets import Any, Int, Bool, Bytes, Int, List, Unicode, Union, default, observe
 
-from jupyterhub.utils import maybe_future
 from jupyterhub.traitlets import Command
 
 class LDAPAuthenticator(Authenticator):
@@ -206,52 +205,51 @@ class LDAPAuthenticator(Authenticator):
             self.username_regex = None
         self.username_regex = re.compile(change['new'])
 
-    create_domain_user = Bool(
+    create_user_home_dir = Bool(
         default_value=False,
         config=True,
         help="""
-        If set to True, will attempt to add a domain user account to the local 
-        machine if the user account does not exist already.
+        If set to True, will attempt to create a domain user's home directory 
+        locally if that directory does not exist already.
         """
     )
 
-    create_domain_user_cmd = Command(
+    create_user_home_dir_cmd = Command(
         config=True,
         help="""
-        Command to add domain account to local machine.
+        Command to create a domain users home directory.
         """
     )
-    @default('create_domain_user_cmd')
-    def _default_create_domain_user_cmd(self):
+    @default('create_user_home_dir_cmd')
+    def _default_create_user_home_dir_cmd(self):
         if sys.platform == 'linux':
             return ['mkhomedir_helper']
         else:
-            self.log.debug("Not sure how to add domain user to the '%s' platform", sys.platform)
+            self.log.debug("Not sure how to create a home directory on '%s' system", sys.platform)
             return ['']
 
-    async def add_user(self, user):
-        user_exists = await maybe_future(self.domain_user_exists(user.name))
+    @gen.coroutine
+    def add_user(self, user):
+        username = user.name
+        user_exists = yield gen.maybe_future(self.domain_user_exists(username))
         if not user_exists:
-            if self.create_domain_user:
-                await maybe_future(self.add_domain_user(user.name))
+            if self.create_user_home_dir:
+                await gen.maybe_future(self.add_user_home_dir(username))
             else:
-                raise KeyError("Domain user %s does not exists locally." % user.name)
-        await maybe_future(super().add_user(username))
+                raise KeyError("Domain user '%s' does not exists locally." % username)
+        yield gen.maybe_future(super().add_user(user))
 
-    def domain_user_exists(username):
-        import pwd
-        usernames = list()
-        users = pwd.getpwall()
-        for user in users:
-            usernames.extend([user[0]])
-        if username in usernames:
+    def domain_user_exists(self, username):
+        user = pwd.getpwnam(username)
+        home_dir = user[5]
+        if os.path.isdir(home_dir):
             return True
         else:
             return False
 
-    def add_domain_user(self, username)
-        cmd = [ arg.replace('USERNAME', username) for arg in selfcreate_domain_user_cmd ] + [username]
-        self.log.info("Creating user: %s", ' '.join(map(pipes.quote, cmd)))
+    def add_user_home_dir(self, username)
+        cmd = [ arg.replace('USERNAME', username) for arg in self.create_user_home_dir_cmd ] + [username]
+        self.log.info("Creating '%s' user home directory using command '%s'", username, ' '.join(map(pipes.quote, cmd)))
         p = Popen(cmd, stdout=PIPE, stderr=STDOUT)
         p.wait()
         if p.returncode:
@@ -486,7 +484,7 @@ class LDAPAuthenticator(Authenticator):
                 # is authenticating user a member of allowed_groups
                 allowed_memberships = list(set(auth_user_memberships).intersection(self.allowed_groups))
                 if bool(allowed_memberships):
-                    self.log.info(
+                    self.log.debug(
                             "User '%s' found in the following allowed ldap groups %s. Proceeding with authentication.", 
                             username, allowed_memberships)
                     

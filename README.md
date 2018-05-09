@@ -18,7 +18,7 @@ Unique features included in this project are as follows:
 - Establish ldap connections in read-only mode
 - Reduce ldap connection instantiation to a single connection
 - Support multiple ldap servers and allow configuration of pool_strategy
-- Support Jupyterhub `create_system_users` and `add_user_cmd` config functionality (BUG)
+- Support user home directory creation at login
 
 ## Installation
 
@@ -256,9 +256,33 @@ c.LDAPAuthenticator.username_pattern = '[a-zA-Z0-9_.][a-zA-Z0-9_.-]{0,252}[a-zA-
 c.LDAPAuthenticator.username_pattern = '[a-zA-Z0-9_.][a-zA-Z0-9_.-]{8,20}[a-zA-Z0-9_.$-]?'
 ```
 
+<dl>
+  <dt>LDAPAuthenticator.create_user_home_dir</dt>
+  <dd>Boolean allowing for user home directory to be created at login</dd>
+</dl>
+
+```python
+# example
+c.LDAPAuthenticator.create_user_home_dir = True
+```
+
+<dl>
+  <dt>LDAPAuthenticator.create_user_home_dir_cmd</dt>
+  <dd>Command used when creating a userhome directory as a list of strings. For
+  each element in the list, the string USERNAME will be replaced with the user's
+  username. The username will also be appended as the final argument. Defaults
+  to `mkhomedir_helper` on linux systems.</dd>
+</dl>
+
+```python
+# example
+c.LDAPAuthenticator.create_user_home_diri_cmd = ['mkhomedir_helper']
+```
+
+
 ## Examples
 
-FreeIPA
+FreeIPA Integration
 
 ```python
 # freeipa example
@@ -274,9 +298,11 @@ c.LDAPAuthenticator.group_search_filter = '(&(objectClass=ipausergroup)(memberOf
 c.LDAPAuthenticator.allowed_groups = ['cn=jupyterhub-users,cn=groups,cn=accounts,dc=example,dc=com']
 c.LDAPAuthenticator.allow_nested_groups = True
 c.LDAPAuthenticator.username_pattern = '[a-zA-Z0-9_.][a-zA-Z0-9_.-]{0,252}[a-zA-Z0-9_.$-]?'
+c.LDAPAuthenticator.create_user_home_dir = True
+c.LDAPAuthenticator.create_user_home_diri_cmd = ['mkhomedir_helper']
 ```
 
-Active Directory
+Active Directory Integration
 
 ```python
 # active directory example
@@ -292,4 +318,6 @@ c.LDAPAuthenticator.group_search_filter = '(&(objectClass=group)(memberOf={group
 c.LDAPAuthenticator.allowed_groups = ['CN=jupyterhub-users,CN=Groups,DC=example,DC=com']
 c.LDAPAuthenticator.allow_nested_groups = True
 c.LDAPAuthenticator.username_pattern = '[a-zA-Z0-9_.][a-zA-Z0-9_.-]{8,20}[a-zA-Z0-9_.$-]?'
+c.LDAPAuthenticator.create_user_home_dir = True
+c.LDAPAuthenticator.create_user_home_diri_cmd = ['mkhomedir_helper']
 ```
