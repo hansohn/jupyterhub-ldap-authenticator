@@ -247,7 +247,7 @@ class LDAPAuthenticator(Authenticator):
         else:
             return False
 
-    def add_user_home_dir(self, username)
+    def add_user_home_dir(self, username):
         cmd = [ arg.replace('USERNAME', username) for arg in self.create_user_home_dir_cmd ] + [username]
         self.log.info("Creating '%s' user home directory using command '%s'", username, ' '.join(map(pipes.quote, cmd)))
         p = Popen(cmd, stdout=PIPE, stderr=STDOUT)
