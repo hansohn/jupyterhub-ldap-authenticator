@@ -4,21 +4,19 @@ LDAP Authenticator plugin for [JupyterHub](https://github.com/jupyterhub/jupyter
 
 ## Description
 
-**jupyterhub-ldap-authenticator** is an [ldap3](https://pypi.org/project/ldap3/) wrapper
-that extends Jupyterhub's auth class to include LDAP authentication.
-This project initially started as a fork of the
-[ldapauthenticator](https://github.com/jupyterhub/ldapauthenticator) project
-but was later scraped when it became obvious that an extension of the original would not
-provide the correct solution. While [ldapauthenticator](https://github.com/jupyterhub/ldapauthenticator)
-will provide most admins with a sensible LDAP solution for Jupyterhub, this project was written
-with the mind set of providing LDAP authentication in Enterprise environments.
+**jupyterhub-ldap-authenticator** is an [ldap3](https://pypi.org/project/ldap3/)
+wrapper that extends Jupyterhub's auth class to include LDAP authentication. This
+project was written with Enterprise LDAP integration in mind and includes the
+following features:
 
-Unique features included in this project are as follows:
+- Supports multiple LDAP servers and allows for configuration of `server_pool_strategy`
+- Uses single read-only LDAP connection per authentication request
+- Verifies authenticating user exists in LDAP and is a member of `allowed_groups`
+    before testing authentication
+- Supports using nested groups in `allowed_groups` list
+- Supports domain user home directory creation at login
 
-- Establish ldap connections in read-only mode
-- Reduce ldap connection instantiation to a single connection
-- Support multiple ldap servers and allow configuration of pool_strategy
-- Support user home directory creation at login
+This project was inspired by the [ldapauthenticator](https://github.com/jupyterhub/ldapauthenticator) project
 
 ## Installation
 
