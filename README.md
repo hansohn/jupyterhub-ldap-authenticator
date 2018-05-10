@@ -274,7 +274,7 @@ c.LDAPAuthenticator.create_user_home_dir = True
 
 ```python
 # example
-c.LDAPAuthenticator.create_user_home_diri_cmd = ['mkhomedir_helper']
+c.LDAPAuthenticator.create_user_home_dir_cmd = ['mkhomedir_helper']
 ```
 
 
@@ -297,7 +297,7 @@ c.LDAPAuthenticator.allowed_groups = ['cn=jupyterhub-users,cn=groups,cn=accounts
 c.LDAPAuthenticator.allow_nested_groups = True
 c.LDAPAuthenticator.username_pattern = '[a-zA-Z0-9_.][a-zA-Z0-9_.-]{0,252}[a-zA-Z0-9_.$-]?'
 c.LDAPAuthenticator.create_user_home_dir = True
-c.LDAPAuthenticator.create_user_home_diri_cmd = ['mkhomedir_helper']
+c.LDAPAuthenticator.create_user_home_dir_cmd = ['mkhomedir_helper']
 ```
 
 Active Directory Integration
@@ -317,5 +317,5 @@ c.LDAPAuthenticator.allowed_groups = ['CN=jupyterhub-users,CN=Groups,DC=example,
 c.LDAPAuthenticator.allow_nested_groups = True
 c.LDAPAuthenticator.username_pattern = '[a-zA-Z0-9_.][a-zA-Z0-9_.-]{8,20}[a-zA-Z0-9_.$-]?'
 c.LDAPAuthenticator.create_user_home_dir = True
-c.LDAPAuthenticator.create_user_home_diri_cmd = ['mkhomedir_helper']
+c.LDAPAuthenticator.create_user_home_dir_cmd = ['mkhomedir_helper']
 ```

@@ -412,7 +412,7 @@ class LDAPAuthenticator(Authenticator):
         if not conn or not conn.bind():
             self.log.error(
                     "Could not establish ldap connection to %s using '%s' and supplied bind_user_password.", 
-                    conn_servers, self.lusedap_bind_user_dn)
+                    conn_servers, self.ldap_bind_user_dn)
             return None
         else:
             self.log.debug(
