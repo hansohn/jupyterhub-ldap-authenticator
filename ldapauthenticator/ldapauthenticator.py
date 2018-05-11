@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 import copy
 from jupyterhub.auth import Authenticator 
 import ldap3 

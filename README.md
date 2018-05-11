@@ -18,7 +18,7 @@ This project was inspired by the [ldapauthenticator](https://github.com/jupyterh
 Install with pip:
 
 ```
-pip3 install git+https://github.com/hansohn/jupyterhub-ldap-authenticator.git
+pip install jupyterhub-ldap-authenticator
 ```
 
 ## Configuration
