@@ -161,7 +161,7 @@ class LDAPAuthenticator(Authenticator):
         config=True,
         help="""
         LDAP search filter to validate that the authenticating user exists
-        within the organization. Search filters containing '{user_logon}' will
+        within the organization. Search filters containing '{username}' will
         have that value substituted with the username of the authenticating user.
         """
     )
@@ -179,7 +179,7 @@ class LDAPAuthenticator(Authenticator):
         config=True,
         help="""
         The location in the Directory Information Tree where the group search
-        will start. Search string containing '{group_dn}' will be substituted
+        will start. Search string containing '{group}' will be substituted
         with entries taken from allow_nested_groups.
         """
     )
@@ -188,7 +188,7 @@ class LDAPAuthenticator(Authenticator):
         config=True,
         help="""
         LDAP search filter to return members of groups defined in the
-        allowed_groups parameter. Search filters containing '{group_dn}' will
+        allowed_groups parameter. Search filters containing '{group}' will
         have that value substituted with the group dns provided in the
         allowed_groups parameter.
         """
@@ -388,7 +388,7 @@ class LDAPAuthenticator(Authenticator):
         nested_groups = list()
         conn.search(
             search_base=self.group_search_base,
-            search_filter=self.group_search_filter.format(group_dn=group),
+            search_filter=self.group_search_filter.format(group=group),
             search_scope=ldap3.SUBTREE)
         if conn.response:
             for nested_group in conn.response:
@@ -477,7 +477,7 @@ class LDAPAuthenticator(Authenticator):
 
             # format user search filter
             auth_user_search_filter = self.user_search_filter.format(
-                user_logon=username)
+                username=username)
 
             # search for authenticating user in ldap
             self.log.debug("Attempting LDAP search using search_filter '%s'.", auth_user_search_filter)

@@ -163,15 +163,15 @@ c.LDAPAuthenticator.user_search_base = 'CN=Users,DC=example,DC=com'
 
 <dl>
   <dt>LDAPAuthenticator.user_search_filter</dt>
-  <dd>LDAP search filter to validate that the authenticating user exists within the organization. Search filters containing '{user_logon}' will have that value substituted with the username of the authenticating user.</dd>
+  <dd>LDAP search filter to validate that the authenticating user exists within the organization. Search filters containing '{username}' will have that value substituted with the username of the authenticating user.</dd>
 </dl>
 
 ```python
 # example - freeipa
-c.LDAPAuthenticator.user_search_filter = '(&(objectClass=person)(uid={user_logon}))'
+c.LDAPAuthenticator.user_search_filter = '(&(objectClass=person)(uid={username}))'
 
 # example - active directory
-c.LDAPAuthenticator.user_search_filter = '(&(objectClass=person)(sAMAccountName={user_logon}))'
+c.LDAPAuthenticator.user_search_filter = '(&(objectClass=person)(sAMAccountName={username}))'
 ```
 
 <dl>
@@ -187,7 +187,7 @@ c.LDAPAuthenticator.user_membership_attribute = 'memberOf'
 <dl>
   <dt>LDAPAuthenticator.group_search_base</dt>
   <dd>The location in the Directory Information Tree where the group search will start.
-  Search string containing '{group_dn}' will be substituted with entries taken from
+  Search string containing '{group}' will be substituted with entries taken from
   allowed_groups</dd>
 </dl>
 
@@ -201,15 +201,15 @@ c.LDAPAuthenticator.user_search_base = 'CN=Groups,DC=example,DC=com'
 
 <dl>
   <dt>LDAPAuthenticator.group_search_filter</dt>
-  <dd>LDAP search filter to return members of groups defined in the allowed_groups parameter. Search filters containing '{group_dn}' will have that value substituted with the group dns provided in the allowed_groups parameter.</dd>
+  <dd>LDAP search filter to return members of groups defined in the allowed_groups parameter. Search filters containing '{group}' will have that value substituted with the group dns provided in the allowed_groups parameter.</dd>
 </dl>
 
 ```python
 # example - freeipa
-c.LDAPAuthenticator.user_search_base = '(&(objectClass=ipausergroup)(memberOf={group_dn}))'
+c.LDAPAuthenticator.user_search_base = '(&(objectClass=ipausergroup)(memberOf={group}))'
 
 # example - active directory
-c.LDAPAuthenticator.user_search_base = '(&(objectClass=group)(memberOf={group_dn}))'
+c.LDAPAuthenticator.user_search_base = '(&(objectClass=group)(memberOf={group}))'
 ```
 
 <dl>
@@ -284,10 +284,10 @@ c.LDAPAuthenticator.server_hosts = ['ldaps://ldap1.example.com:636', 'ldaps://ld
 c.LDAPAuthenticator.bind_user_dn = 'uid=imauser,cn=users,cn=accounts,dc=example,dc=com'
 c.LDAPAuthenticator.bind_user_password = 'imapassword'
 c.LDAPAuthenticator.user_search_base = 'cn=users,cn=accounts,dc=example,dc=com'
-c.LDAPAuthenticator.user_search_filter = '(&(objectClass=person)(uid={user_logon}))'
+c.LDAPAuthenticator.user_search_filter = '(&(objectClass=person)(uid={username}))'
 c.LDAPAuthenticator.user_membership_attribute = 'memberOf'
 c.LDAPAuthenticator.group_search_base = 'cn=groups,cn=accounts,dc=example,dc=com'
-c.LDAPAuthenticator.group_search_filter = '(&(objectClass=ipausergroup)(memberOf={group_dn}))'
+c.LDAPAuthenticator.group_search_filter = '(&(objectClass=ipausergroup)(memberOf={group}))'
 c.LDAPAuthenticator.allowed_groups = ['cn=jupyterhub-users,cn=groups,cn=accounts,dc=example,dc=com']
 c.LDAPAuthenticator.allow_nested_groups = True
 c.LDAPAuthenticator.username_pattern = '[a-zA-Z0-9_.][a-zA-Z0-9_.-]{0,252}[a-zA-Z0-9_.$-]?'
@@ -304,10 +304,10 @@ c.LDAPAuthenticator.server_hosts = ['ldaps://ldap1.example.com:636', 'ldaps://ld
 c.LDAPAuthenticator.bind_user_dn = 'CN=imauser,CN=Users,DC=example,DC=com'
 c.LDAPAuthenticator.bind_user_password = 'imapassword'
 c.LDAPAuthenticator.user_search_base = 'CN=Users,DC=example,DC=com'
-c.LDAPAuthenticator.user_search_filter = '(&(objectClass=person)(sAMAccountName={user_logon}))'
+c.LDAPAuthenticator.user_search_filter = '(&(objectClass=person)(sAMAccountName={username}))'
 c.LDAPAuthenticator.user_membership_attribute = 'memberOf'
 c.LDAPAuthenticator.group_search_base = 'CN=Groups,DC=example,DC=com'
-c.LDAPAuthenticator.group_search_filter = '(&(objectClass=group)(memberOf={group_dn}))'
+c.LDAPAuthenticator.group_search_filter = '(&(objectClass=group)(memberOf={group}))'
 c.LDAPAuthenticator.allowed_groups = ['CN=jupyterhub-users,CN=Groups,DC=example,DC=com']
 c.LDAPAuthenticator.allow_nested_groups = True
 c.LDAPAuthenticator.username_pattern = '[a-zA-Z0-9_.][a-zA-Z0-9_.-]{8,20}[a-zA-Z0-9_.$-]?'

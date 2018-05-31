@@ -6,7 +6,11 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 
 - no new features in development at this time
 
-## [0.1.1](https://github.com/audio4ears/jupyterhub-ldap-authenticator/compare/0.1.0...0.1.1) (May 31, 2018)
+## [0.2.0](https://github.com/audio4ears/jupyterhub-ldap-authenticator/compare/0.1.0...0.2.0) (May 31, 2018)
+
+FEATURES:
+
+- rename keyword substituion keys `user_logon` and `group_dn` to `username` and `group` to align with other ldap authenticator projects for easier transition.
 
 BUG FIXES:
 
