@@ -6,7 +6,19 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 
 - no new features in development at this time
 
-## [0.2.0](https://github.com/audio4ears/jupyterhub-ldap-authenticator/compare/0.1.0...0.2.0) (May 31, 2018)
+## [0.3.0](https://github.com/hansohn/jupyterhub-ldap-authenticator/compare/0.2.0...0.3.0) (Nov 1, 2018)
+
+FEATURES:
+
+- set 'allowed_groups' to None to short-circuit user group membership check. For use in LDAP solutions that do not allow user group memberships to be easily queried.
+
+BUG FIXES:
+
+- add try/catch to pwd.getpwnam call
+- fix Readme parameter typos
+- fix Changelog linking
+
+## [0.2.0](https://github.com/hansohn/jupyterhub-ldap-authenticator/compare/0.1.0...0.2.0) (May 31, 2018)
 
 FEATURES:
 
@@ -18,7 +30,7 @@ BUG FIXES:
 - fix bug that permitted user login after being removed from allowed_groups memberships
 - update code to adheare to pylint standards
 
-## [0.1.0](https://github.com/audio4ears/jupyterhub-ldap-authenticator/compare/0.1.0...0.1.0) (May 04, 2018)
+## [0.1.0](https://github.com/hansohn/jupyterhub-ldap-authenticator/compare/0.1.0...0.1.0) (May 04, 2018)
 
 FEATURES:
 

@@ -193,10 +193,10 @@ c.LDAPAuthenticator.user_membership_attribute = 'memberOf'
 
 ```python
 # example - freeipa
-c.LDAPAuthenticator.user_search_base = 'cn=groups,cn=accounts,dc=example,dc=com'
+c.LDAPAuthenticator.group_search_base = 'cn=groups,cn=accounts,dc=example,dc=com'
 
 # example - active directory
-c.LDAPAuthenticator.user_search_base = 'CN=Groups,DC=example,DC=com'
+c.LDAPAuthenticator.group_search_base = 'CN=Groups,DC=example,DC=com'
 ```
 
 <dl>
@@ -206,16 +206,15 @@ c.LDAPAuthenticator.user_search_base = 'CN=Groups,DC=example,DC=com'
 
 ```python
 # example - freeipa
-c.LDAPAuthenticator.user_search_base = '(&(objectClass=ipausergroup)(memberOf={group}))'
+c.LDAPAuthenticator.group_search_base = '(&(objectClass=ipausergroup)(memberOf={group}))'
 
 # example - active directory
-c.LDAPAuthenticator.user_search_base = '(&(objectClass=group)(memberOf={group}))'
+c.LDAPAuthenticator.group_search_base = '(&(objectClass=group)(memberOf={group}))'
 ```
 
 <dl>
   <dt>LDAPAuthenticator.allowed_groups</dt>
-  <dd>List of LDAP group DNs that users must be a member of in order to be granted
-  login.</dd>
+  <dd>List of LDAP group DNs that users must be a member of in order to be granted login. If left undefined or set to None, allowed_groups will be short-circuited and all users will be allowed (defaults to None).</dd>
 </dl>
 
 ```python
@@ -275,7 +274,7 @@ c.LDAPAuthenticator.create_user_home_dir_cmd = ['mkhomedir_helper']
 
 ## Examples
 
-FreeIPA Integration
+##### FreeIPA Integration
 
 ```python
 # freeipa example
@@ -295,7 +294,7 @@ c.LDAPAuthenticator.create_user_home_dir = True
 c.LDAPAuthenticator.create_user_home_dir_cmd = ['mkhomedir_helper']
 ```
 
-Active Directory Integration
+##### Active Directory Integration
 
 ```python
 # active directory example
@@ -311,6 +310,23 @@ c.LDAPAuthenticator.group_search_filter = '(&(objectClass=group)(memberOf={group
 c.LDAPAuthenticator.allowed_groups = ['CN=jupyterhub-users,CN=Groups,DC=example,DC=com']
 c.LDAPAuthenticator.allow_nested_groups = True
 c.LDAPAuthenticator.username_pattern = '[a-zA-Z0-9_.][a-zA-Z0-9_.-]{8,20}[a-zA-Z0-9_.$-]?'
+c.LDAPAuthenticator.create_user_home_dir = True
+c.LDAPAuthenticator.create_user_home_dir_cmd = ['mkhomedir_helper']
+```
+
+##### OpenLDAP Integration
+
+Because OpenLDAP does not natively support the memberOf attribute in their user objects, the `allowed_groups` scoping has been short-circuited in the following example:
+
+```python
+# openldap example
+c.JupyterHub.authenticator_class = 'ldapauthenticator.LDAPAuthenticator'
+c.LDAPAuthenticator.server_hosts = ['ldaps://ldap1.example.com:636', 'ldaps://ldap2.example.com:636']
+c.LDAPAuthenticator.bind_user_dn = 'uid=imauser,ou=People,dc=example,dc=com'
+c.LDAPAuthenticator.bind_user_password = 'imapassword'
+c.LDAPAuthenticator.user_search_base = 'ou=People,dc=example,dc=com'
+c.LDAPAuthenticator.user_search_filter = '(&(objectClass=posixAccount)(uid={username}))'
+c.LDAPAuthenticator.username_pattern = '[a-zA-Z0-9_.][a-zA-Z0-9_.-]{0,252}[a-zA-Z0-9_.$-]?'
 c.LDAPAuthenticator.create_user_home_dir = True
 c.LDAPAuthenticator.create_user_home_dir_cmd = ['mkhomedir_helper']
 ```
