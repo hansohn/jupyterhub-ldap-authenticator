@@ -29,8 +29,8 @@ import os
 import pipes
 import pwd
 import re
+import subprocess
 import sys
-from subprocess import Popen, PIPE, STDOUT
 from jupyterhub.auth import Authenticator
 from jupyterhub.traitlets import Command
 import ldap3
@@ -196,6 +196,8 @@ class LDAPAuthenticator(Authenticator):
 
     allowed_groups = Union(
         [Unicode(), List()],
+        allow_none=True,
+        default_value=None,
         config=True,
         help="""
         List of LDAP group DNs that users must be a member of in order to be granted
@@ -248,6 +250,7 @@ class LDAPAuthenticator(Authenticator):
         Command to create a users home directory.
         """
     )
+
     @default('create_user_home_dir_cmd')
     def _default_create_user_home_dir_cmd(self):
         if sys.platform == 'linux':
@@ -272,9 +275,12 @@ class LDAPAuthenticator(Authenticator):
         """
         Verify user home directory exists
         """
-        user = pwd.getpwnam(username)
-        home_dir = user[5]
-        return bool(os.path.isdir(home_dir))
+        try:
+            user = pwd.getpwnam(username)
+            home_dir = user[5]
+            return bool(os.path.isdir(home_dir))
+        except KeyError:
+            return bool(0)
 
     def add_user_home_dir(self, username):
         """
@@ -282,7 +288,7 @@ class LDAPAuthenticator(Authenticator):
         """
         cmd = [arg.replace('USERNAME', username) for arg in self.create_user_home_dir_cmd] + [username]
         self.log.info("Creating '%s' user home directory using command '%s'", username, ' '.join(map(pipes.quote, cmd)))
-        create_dir = Popen(cmd, stdout=PIPE, stderr=STDOUT)
+        create_dir = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, shell=False)
         create_dir.wait()
         if create_dir.returncode:
             err = create_dir.stdout.read().decode('utf8', 'replace')
@@ -398,6 +404,18 @@ class LDAPAuthenticator(Authenticator):
         nested_groups = list(set(nested_groups))
         return nested_groups
 
+    def test_auth(self, conn, auth_user_dn, password):
+        """
+        Test User Authentication
+        rebind ldap connection with authenticating user,
+        gather results, and close connection
+        """
+        conn.rebind(
+            user=auth_user_dn,
+            password=password)
+        auth_bound = copy.deepcopy(conn.bind())
+        conn.unbind()
+        return auth_bound
 
     @gen.coroutine
     def authenticate(self, handler, data):
@@ -432,7 +450,7 @@ class LDAPAuthenticator(Authenticator):
             conn_servers.extend([host])
 
         # verify ldap connection object parameters are defined
-        if len(server_pool.servers) < 1:
+        if not server_pool.servers:
             self.log.error("No hosts provided. ldap connection requires at least 1 host to connect to.")
             return None
         if not self.bind_user_dn or self.bind_user_dn.strip() == '':
@@ -468,16 +486,15 @@ class LDAPAuthenticator(Authenticator):
                 "Successfully established connection to %s with user '%s'",
                 conn_servers, self.bind_user_dn)
 
-            # compile list of permitted groups
-            permitted_groups = copy.deepcopy(self.allowed_groups)
-            if self.allow_nested_groups:
-                for group in self.allowed_groups:
-                    nested_groups = self.get_nested_groups(conn, group)
-                permitted_groups.extend(nested_groups)
-
             # format user search filter
             auth_user_search_filter = self.user_search_filter.format(
                 username=username)
+
+            # format user search attributes
+            if self.allowed_groups is not None:
+                auth_user_search_attributes = self.user_membership_attribute
+            else:
+                auth_user_search_attributes = []
 
             # search for authenticating user in ldap
             self.log.debug("Attempting LDAP search using search_filter '%s'.", auth_user_search_filter)
@@ -485,7 +502,7 @@ class LDAPAuthenticator(Authenticator):
                 search_base=self.user_search_base,
                 search_filter=auth_user_search_filter,
                 search_scope=ldap3.SUBTREE,
-                attributes=self.user_membership_attribute,
+                attributes=auth_user_search_attributes,
                 paged_size=2)
 
             # handle abnormal search results
@@ -517,32 +534,49 @@ class LDAPAuthenticator(Authenticator):
                         "Search results for user '%s' returned 'dn' attribute as '%s'",
                         username, search_response['dn'])
                     auth_user_dn = search_response['dn']
-                if not search_response['attributes'][self.user_membership_attribute]:
-                    self.log.error(
-                        "Search results for user '%s' returned '%s' attribute with undefned or null value.",
-                        username, self.user_membership_attribute)
-                    conn.unbind()
-                    return None
+
+                # is authenticating user allowed
+                if self.allowed_groups is not None:
+                    # compile list of user groups
+                    if not search_response['attributes'][self.user_membership_attribute]:
+                        self.log.error(
+                            "Search results for user '%s' returned '%s' attribute with undefned or null value.",
+                            username, self.user_membership_attribute)
+                        conn.unbind()
+                        return None
+                    else:
+                        self.log.debug(
+                            "Search results for user '%s' returned '%s' attribute as %s",
+                            username, self.user_membership_attribute,
+                            search_response['attributes'][self.user_membership_attribute])
+                        auth_user_memberships = search_response['attributes'][self.user_membership_attribute]
+
+                    # compile list of permitted groups
+                    permitted_groups = copy.deepcopy(self.allowed_groups)
+                    if self.allow_nested_groups:
+                        for group in self.allowed_groups:
+                            nested_groups = self.get_nested_groups(conn, group)
+                        permitted_groups.extend(nested_groups)
+
+                    # is authenticating user a member of permitted_groups
+                    allowed_memberships = list(set(auth_user_memberships).intersection(permitted_groups))
+                    if bool(allowed_memberships):
+                        self.log.debug(
+                            "User '%s' found in the following allowed ldap groups %s. Proceeding with authentication.",
+                            username, allowed_memberships)
+                        auth_bound = self.test_auth(conn, auth_user_dn, password)
+                    else:
+                        self.log.error("User '%s' is not a member of any permitted groups %s", username, permitted_groups)
+                        permitted_groups = None
+                        return None
                 else:
+                    auth_bound = self.test_auth(conn, auth_user_dn, password)
                     self.log.debug(
-                        "Search results for user '%s' returned '%s' attribute as %s",
-                        username, self.user_membership_attribute,
-                        search_response['attributes'][self.user_membership_attribute])
-                    auth_user_memberships = search_response['attributes'][self.user_membership_attribute]
+                        "User '%s' will not be verified against allowed_groups due to feature short-circuiting. Proceeding with authentication.",
+                        username)
 
-                # is authenticating user a member of permitted_groups
-                allowed_memberships = list(set(auth_user_memberships).intersection(permitted_groups))
-                if bool(allowed_memberships):
-                    self.log.debug(
-                        "User '%s' found in the following allowed ldap groups %s. Proceeding with authentication.",
-                        username, allowed_memberships)
-
-                    # rebind ldap connection with authenticating user, gather results, and close connection
-                    conn.rebind(
-                        user=auth_user_dn,
-                        password=password)
-                    auth_bound = copy.deepcopy(conn.bind())
-                    conn.unbind()
+                # return auth results
+                try:
                     if not auth_bound:
                         self.log.error(
                             "Could not establish ldap connection to %s using '%s' and supplied bind_user_password.",
@@ -551,8 +585,7 @@ class LDAPAuthenticator(Authenticator):
                     else:
                         self.log.info("User '%s' sucessfully authenticated against ldap server %r.", username, conn_servers)
                         auth_response = username
-                else:
-                    self.log.error("User '%s' is not a member of any permitted groups %s", username, permitted_groups)
+                except:
                     auth_response = None
 
                 permitted_groups = None
