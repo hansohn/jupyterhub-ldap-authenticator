@@ -8,7 +8,7 @@ from setuptools import find_packages, setup
 
 # Package meta-data.
 NAME = 'jupyterhub-ldap-authenticator'
-VERSION = '0.3.0'
+VERSION = '0.3.1'
 DESCRIPTION = 'LDAP Authenticator for JupyterHub'
 AUTHOR = 'Ryan Hansohn'
 EMAIL = 'info@imnorobot.com'
