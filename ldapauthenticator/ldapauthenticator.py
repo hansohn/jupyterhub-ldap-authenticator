@@ -328,7 +328,7 @@ class LDAPAuthenticator(Authenticator):
         """
         host_ip_regex = re.compile(r'^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])$')
         host_name_regex = re.compile(r'^((?!-)[a-z0-9\-]{1,63}(?<!-)\.){1,}((?!-)[a-z0-9\-]{1,63}(?<!-)){1}$')
-        host_url_regex = re.compile(r'^(ldaps?://)(((?!-)[a-z0-9\-]{1,63}(?<!-)\.){1,}((?!-)[a-z0-9\-]{1,63}(?<!-)){1}):([0-9]{3})$')
+        host_url_regex = re.compile(r'^(ldaps?://)(((?!-)[a-z0-9\-]{1,63}(?<!-)\.){1,}((?!-)[a-z0-9\-]{1,63}(?<!-)){1}):([0-9]{1,5})$')
         if bool(host_ip_regex.match(host)):
             # using ipv4 address
             valid = True
