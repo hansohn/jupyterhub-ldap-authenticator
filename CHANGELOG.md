@@ -6,6 +6,13 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 
 - no new features in development at this time
 
+## [0.3.1](https://github.com/hansohn/jupyterhub-ldap-authenticator/compare/0.3.0...0.3.1) (Feb 5, 2019)
+
+BUG FIXES:
+
+- update documentation to reflect correct user_search_filter for active directory integration
+- allow server_hosts to use non-standard ldap ports
+
 ## [0.3.0](https://github.com/hansohn/jupyterhub-ldap-authenticator/compare/0.2.0...0.3.0) (Nov 1, 2018)
 
 FEATURES:
