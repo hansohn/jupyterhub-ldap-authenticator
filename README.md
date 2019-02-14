@@ -206,10 +206,10 @@ c.LDAPAuthenticator.group_search_base = 'CN=Groups,DC=example,DC=com'
 
 ```python
 # example - freeipa
-c.LDAPAuthenticator.group_search_base = '(&(objectClass=ipausergroup)(memberOf={group}))'
+c.LDAPAuthenticator.group_search_filter = '(&(objectClass=ipausergroup)(memberOf={group}))'
 
 # example - active directory
-c.LDAPAuthenticator.group_search_base = '(&(objectClass=group)(memberOf={group}))'
+c.LDAPAuthenticator.group_search_filter = '(&(objectClass=group)(memberOf={group}))'
 ```
 
 <dl>
