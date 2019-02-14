@@ -4,7 +4,7 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased](unreleased)
 
-- no new features in development at this time
+- update group_search_filter documentation in README
 
 ## [0.3.1](https://github.com/hansohn/jupyterhub-ldap-authenticator/compare/0.3.0...0.3.1) (Feb 5, 2019)
 
