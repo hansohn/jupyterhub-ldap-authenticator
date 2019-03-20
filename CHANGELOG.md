@@ -8,6 +8,8 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [0.3.2](https://github.com/hansohn/jupyterhub-ldap-authenticator/compare/0.3.1...0.3.2) (Mar 20, 2019)
 
+BUG FIXES:
+
 - update group_search_filter documentation in README
 - modify test_auth function to work with OTP passwords
 - update rebind error statement
