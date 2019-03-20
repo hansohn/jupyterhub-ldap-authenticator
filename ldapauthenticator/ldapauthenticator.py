@@ -410,11 +410,12 @@ class LDAPAuthenticator(Authenticator):
         rebind ldap connection with authenticating user,
         gather results, and close connection
         """
-        conn.rebind(
-            user=auth_user_dn,
-            password=password)
-        auth_bound = copy.deepcopy(conn.bind())
-        conn.unbind()
+        try:
+            auth_bound = conn.rebind(user=auth_user_dn, password=password)
+        except:
+            auth_bound = False
+        finally:
+            conn.unbind()
         return auth_bound
 
     @gen.coroutine
@@ -579,8 +580,8 @@ class LDAPAuthenticator(Authenticator):
                 try:
                     if not auth_bound:
                         self.log.error(
-                            "Could not establish ldap connection to %s using '%s' and supplied bind_user_password.",
-                            conn_servers, self.bind_user_dn)
+                            "Could not establish ldap connection to %s using '%s' and supplied password.",
+                            conn_servers, auth_user_dn)
                         auth_response = None
                     else:
                         self.log.info("User '%s' sucessfully authenticated against ldap server %r.", username, conn_servers)
