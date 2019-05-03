@@ -262,13 +262,11 @@ class LDAPAuthenticator(Authenticator):
 
     @gen.coroutine
     def add_user(self, user):
-        username = user.name
-        user_exists = yield gen.maybe_future(self.user_home_dir_exists(username))
-        if not user_exists:
-            if self.create_user_home_dir:
+        if self.create_user_home_dir:
+            username = user.name
+            user_exists = yield gen.maybe_future(self.user_home_dir_exists(username))
+            if not user_exists:
                 yield gen.maybe_future(self.add_user_home_dir(username))
-            else:
-                raise KeyError("Domain user '%s' does not exists locally." % username)
         yield gen.maybe_future(super().add_user(user))
 
     def user_home_dir_exists(self, username):
