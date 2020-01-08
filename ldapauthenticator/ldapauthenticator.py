@@ -262,13 +262,11 @@ class LDAPAuthenticator(Authenticator):
 
     @gen.coroutine
     def add_user(self, user):
-        username = user.name
-        user_exists = yield gen.maybe_future(self.user_home_dir_exists(username))
-        if not user_exists:
-            if self.create_user_home_dir:
+        if self.create_user_home_dir:
+            username = user.name
+            user_exists = yield gen.maybe_future(self.user_home_dir_exists(username))
+            if not user_exists:
                 yield gen.maybe_future(self.add_user_home_dir(username))
-            else:
-                raise KeyError("Domain user '%s' does not exists locally." % username)
         yield gen.maybe_future(super().add_user(user))
 
     def user_home_dir_exists(self, username):
@@ -398,9 +396,10 @@ class LDAPAuthenticator(Authenticator):
             search_scope=ldap3.SUBTREE)
         if conn.response:
             for nested_group in conn.response:
-                nested_groups.extend([nested_group['dn']])
-                groups = self.get_nested_groups(conn, nested_group['dn'])
-                nested_groups.extend(groups)
+                if 'dn' in nested_group:
+                    nested_groups.extend([nested_group['dn']])
+                    groups = self.get_nested_groups(conn, nested_group['dn'])
+                    nested_groups.extend(groups)
         nested_groups = list(set(nested_groups))
         return nested_groups
 
@@ -506,22 +505,24 @@ class LDAPAuthenticator(Authenticator):
                 attributes=auth_user_search_attributes,
                 paged_size=2)
 
+            filtered_response = [r for r in conn.response if 'dn' in r]
+
             # handle abnormal search results
-            if not conn.response or 'attributes' not in conn.response[0].keys():
+            if not filtered_response or 'attributes' not in filtered_response[0].keys():
                 self.log.error(
                     "LDAP search '%s' found %i result(s).",
-                    auth_user_search_filter, len(conn.response))
+                    auth_user_search_filter, len(filtered_response))
                 return None
-            elif len(conn.response) > 1:
+            elif len(filtered_response) > 1:
                 self.log.error(
                     "LDAP search '%s' found %i result(s). Please narrow search to 1 result.",
-                    auth_user_search_filter, len(conn.response))
+                    auth_user_search_filter, len(filtered_response))
                 return None
             else:
-                self.log.debug("LDAP search '%s' found %i result(s).", auth_user_search_filter, len(conn.response))
+                self.log.debug("LDAP search '%s' found %i result(s).", auth_user_search_filter, len(filtered_response))
 
                 # copy response to var
-                search_response = copy.deepcopy(conn.response[0])
+                search_response = copy.deepcopy(filtered_response[0])
 
                 # get authenticating user's ldap attributes
                 if not search_response['dn'] or search_response['dn'].strip == '':
