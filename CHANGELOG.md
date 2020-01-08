@@ -6,6 +6,13 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 
 - no new features in development at this time
 
+## [0.3.3](https://github.com/hansohn/jupyterhub-ldap-authenticator/compare/0.3.2...0.3.3) (Jan 08, 2020)
+
+BUG FIXES:
+
+- filter out user search results not containing the dn attribute
+- only verify local user exists if create_user_home_dir is True
+
 ## [0.3.2](https://github.com/hansohn/jupyterhub-ldap-authenticator/compare/0.3.1...0.3.2) (Mar 20, 2019)
 
 BUG FIXES:
