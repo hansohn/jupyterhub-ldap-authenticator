@@ -260,9 +260,8 @@ c.LDAPAuthenticator.create_user_home_dir = True
 
 <dl>
   <dt>LDAPAuthenticator.create_user_home_dir_cmd</dt>
-  <dd>Command used when creating a userhome directory as a list of strings. For
-  each element in the list, the string USERNAME will be replaced with the user's
-  username. The username will also be appended as the final argument. Defaults
+  <dd>Command used when creating a userhome directory as a list of strings. The
+  username will be appended as the final argument. Defaults
   to `mkhomedir_helper` on linux systems.</dd>
 </dl>
 
