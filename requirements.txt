@@ -1,3 +1,4 @@
 jupyterhub>=0.8.0
 ldap3>=2.5
+tornado>=4.1
 traitlets>=4.3.2

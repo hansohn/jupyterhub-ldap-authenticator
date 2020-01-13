@@ -7,13 +7,13 @@ from setuptools import find_packages, setup
 
 # Package meta-data.
 NAME = 'jupyterhub-ldap-authenticator'
-VERSION = '0.3.3'
+VERSION = '0.4.0'
 DESCRIPTION = 'LDAP Authenticator for JupyterHub'
 AUTHOR = 'Ryan Hansohn'
 EMAIL = 'info@imnorobot.com'
 URL = 'https://github.com/hansohn/jupyterhub-ldap-authenticator'
-REQUIRES_PYTHON = '~=3.4'
-REQUIRED = ['ldap3', 'jupyterhub', 'traitlets']
+REQUIRES_PYTHON = '~=3.5'
+REQUIRED = ['jupyterhub', 'ldap3', 'tornado', 'traitlets']
 KEYWORDS = ['ldap', 'authenticator', 'authentication', 'jupyterhub', 'jupyter']
 
 # ------------------------------------------------------------------------------
@@ -69,8 +69,10 @@ if 'setuptools' in sys.modules:
                 continue
             install_requires.append(req)
 
+
 def main():
     setup(**setup_args)
+
 
 if __name__ == '__main__':
     main()
