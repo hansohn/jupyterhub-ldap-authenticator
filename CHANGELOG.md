@@ -6,6 +6,18 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 
 - no new features in development at this time
 
+## [0.4.0](https://github.com/hansohn/jupyterhub-ldap-authenticator/compare/0.3.3...0.4.0) (Jan 13, 2020)
+
+FEATURES:
+
+- bump python requirement to ~=3.5
+- use AUTO_BIND_NO_TLS for non-ldaps connections
+- migrate logs to str.format()
+- update hostname regex
+- remove username normalization
+- remove dn attribute filtering on auth_user_search_filter response
+- PEP8 updates
+
 ## [0.3.3](https://github.com/hansohn/jupyterhub-ldap-authenticator/compare/0.3.2...0.3.3) (Jan 08, 2020)
 
 BUG FIXES:
