@@ -25,17 +25,18 @@
 LDAP Authenticator plugin for JupyterHub
 """
 
-import copy
 import os
 import pwd
 import re
 import subprocess
 import sys
+import typing
 from jupyterhub.auth import Authenticator
+from jupyterhub.orm import User
 from jupyterhub.traitlets import Command
 import ldap3
 import ldap3.core.exceptions
-from tornado import gen
+from tornado import gen, web
 from traitlets import Any, Int, Bool, List, Unicode, Union, default, observe
 
 
@@ -230,7 +231,7 @@ class LDAPAuthenticator(Authenticator):
     )
 
     @observe('username_pattern')
-    def _username_pattern_changed(self, change):
+    def _username_pattern_changed(self, change: dict) -> None:
         if not change['new']:
             self.username_regex = None
         self.username_regex = re.compile(change['new'])
@@ -253,7 +254,7 @@ class LDAPAuthenticator(Authenticator):
     )
 
     @default('create_user_home_dir_cmd')
-    def _default_create_user_home_dir_cmd(self):
+    def _default_create_user_home_dir_cmd(self) -> typing.List[str]:
         if sys.platform == 'linux':
             home_dir_cmd = ['mkhomedir_helper']
         else:
@@ -263,7 +264,7 @@ class LDAPAuthenticator(Authenticator):
         return home_dir_cmd
 
     @gen.coroutine
-    def add_user(self, user):
+    def add_user(self, user: User) -> typing.Generator:
         if self.create_user_home_dir:
             username = user.name
             user_exists = yield gen.maybe_future(self.user_home_dir_exists(username))
@@ -271,7 +272,7 @@ class LDAPAuthenticator(Authenticator):
                 yield gen.maybe_future(self.add_user_home_dir(username))
         yield gen.maybe_future(super().add_user(user))
 
-    def user_home_dir_exists(self, username):
+    def user_home_dir_exists(self, username: str) -> bool:
         """
         Verify user home directory exists
         """
@@ -282,7 +283,7 @@ class LDAPAuthenticator(Authenticator):
         except KeyError:
             return False
 
-    def add_user_home_dir(self, username):
+    def add_user_home_dir(self, username: str) -> None:
         """
         Creates user home directory
         """
@@ -298,7 +299,7 @@ class LDAPAuthenticator(Authenticator):
             raise RuntimeError("Failed to create '{}' user home directory: {}".format(
                 username, err))
 
-    def validate_username(self, username):
+    def validate_username(self, username: str) -> bool:
         """
         Validate a username
         Return True if username is valid, False otherwise.
@@ -313,14 +314,19 @@ class LDAPAuthenticator(Authenticator):
             return True
         return bool(self.username_regex.match(username))
 
-    def validate_host(self, host):
+    def validate_host(self, host: str) -> bool:
         """
         Validate hostname
         Return True if host is valid, False otherwise.
         """
-        ip_address_regex = re.compile(r'^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])$')
-        hostname_regex = re.compile(r'^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9][a-z0-9-]{0,61}[a-z0-9]$')
-        url_regex = re.compile(r'^(ldaps?)://((?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9][a-z0-9-]{0,61}[a-z0-9]):([0-9]{1,5})$')
+        ip_address_regex = re.compile(r'^(?:(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\.){3}'
+                                      r'(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])$')
+        hostname_regex = re.compile(r'^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+'
+                                    r'[a-z0-9][a-z0-9-]{0,61}[a-z0-9]$')
+        url_regex = re.compile(r'^(ldaps?)://'
+                               r'((?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+'
+                               r'[a-z0-9][a-z0-9-]{0,61}[a-z0-9]):'
+                               r'([0-9]{1,5})$')
         if bool(ip_address_regex.match(host)):
             # using ipv4 address
             valid = True
@@ -339,7 +345,8 @@ class LDAPAuthenticator(Authenticator):
             valid = False
         return valid
 
-    def create_ldap_server_pool_obj(self, ldap_servers=None):
+    def create_ldap_server_pool_obj(self,
+                                    ldap_servers: typing.List[str] = None) -> ldap3.ServerPool:
         """
         Create ldap3 ServerPool Object
         """
@@ -351,7 +358,7 @@ class LDAPAuthenticator(Authenticator):
         )
         return server_pool
 
-    def create_ldap_server_obj(self, host):
+    def create_ldap_server_obj(self, host: str) -> ldap3.Server:
         """
         Create ldap3 Server Object
         """
@@ -363,22 +370,20 @@ class LDAPAuthenticator(Authenticator):
         )
         return server
 
-    def ldap_connection(self, server_pool, username, password):
+    def ldap_connection(self,
+                        server_pool: ldap3.ServerPool,
+                        username: str,
+                        password: str) -> ldap3.Connection:
         """
         Create ldap(s) Connection Object
         """
-        # determine if using ssl
-        if self.server_use_ssl:
-            auto_bind = ldap3.AUTO_BIND_TLS_BEFORE_BIND
-        else:
-            auto_bind = ldap3.AUTO_BIND_NO_TLS
         # attempt connection
         try:
             conn = ldap3.Connection(
                 server_pool,
                 user=username,
                 password=password,
-                auto_bind=auto_bind,
+                auto_bind=ldap3.AUTO_BIND_NO_TLS,
                 read_only=True,
                 receive_timeout=self.server_receive_timeout)
         except ldap3.core.exceptions.LDAPBindError as exc:
@@ -386,10 +391,10 @@ class LDAPAuthenticator(Authenticator):
                 exc_type=exc.__class__.__name__,
                 exc_msg=exc.args[0] if exc.args else '')
             self.log.error("Failed to connect to ldap: {}".format(msg))
-            return None
+            conn = None
         return conn
 
-    def get_nested_groups(self, conn, group):
+    def get_nested_groups(self, conn, group: str) -> typing.List[str]:
         """
         Recursively search group for nested memberships
         """
@@ -407,7 +412,7 @@ class LDAPAuthenticator(Authenticator):
         nested_groups = list(set(nested_groups))
         return nested_groups
 
-    def test_auth(self, conn, auth_user_dn, password):
+    def test_auth(self, conn: ldap3.Connection, auth_user_dn: str, password: str) -> bool:
         """
         Test User Authentication
         rebind ldap connection with authenticating user,
@@ -422,7 +427,7 @@ class LDAPAuthenticator(Authenticator):
         return auth_bound
 
     @gen.coroutine
-    def authenticate(self, handler, data):
+    def authenticate(self, handler: web.RequestHandler, data: dict) -> typing.Optional[str]:
 
         # define vars
         username = data['username']
@@ -441,7 +446,7 @@ class LDAPAuthenticator(Authenticator):
 
         # cast server_hosts to list
         if isinstance(self.server_hosts, str):
-            self.server_hosts = self.server_hosts.split()
+            self.server_hosts = self.server_hosts.split(',')
 
         # validate hosts and populate server_pool object
         for host in self.server_hosts:
@@ -525,7 +530,7 @@ class LDAPAuthenticator(Authenticator):
                     auth_user_search_filter, len(conn.response)))
 
                 # copy response to var
-                search_response = copy.deepcopy(conn.response[0])
+                search_response = conn.response[0]
 
                 # get authenticating user's ldap attributes
                 if 'dn' not in search_response or not search_response['dn'].strip():
@@ -553,17 +558,18 @@ class LDAPAuthenticator(Authenticator):
                             "Search results for user '{}' returned '{}' attribute as {}".format(
                                 username, self.user_membership_attribute,
                                 search_response['attributes'][self.user_membership_attribute]))
-                        auth_user_memberships = search_response['attributes'][self.user_membership_attribute]
+                        user_groups = search_response['attributes'][self.user_membership_attribute]
 
                     # compile list of permitted groups
-                    permitted_groups = copy.deepcopy(self.allowed_groups)
+                    permitted_groups = list()
+                    permitted_groups.extend(self.allowed_groups)
                     if self.allow_nested_groups:
                         for group in self.allowed_groups:
                             nested_groups = self.get_nested_groups(conn, group)
                             permitted_groups.extend(nested_groups)
 
                     # is authenticating user a member of permitted_groups
-                    allowed_memberships = list(set(auth_user_memberships).intersection(permitted_groups))
+                    allowed_memberships = list(set(user_groups).intersection(permitted_groups))
                     if allowed_memberships:
                         self.log.debug(("User '{}' found in the following allowed ldap groups " +
                                         "{}. Proceeding with authentication.").format(

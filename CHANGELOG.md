@@ -6,6 +6,12 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 
 - no new features in development at this time
 
+## [0.4.1](https://github.com/hansohn/jupyterhub-ldap-authenticator/compare/0.4.0...0.4.1) (Dev 21, 2020)
+
+BUG FIXES:
+
+- set auto_bind to AUTO_BIND_NO_TLS to account to ldap3 bind changes
+
 ## [0.4.0](https://github.com/hansohn/jupyterhub-ldap-authenticator/compare/0.3.3...0.4.0) (Jan 13, 2020)
 
 FEATURES:
