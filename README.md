@@ -302,7 +302,7 @@ c.LDAPAuthenticator.server_hosts = ['ldaps://ldap1.example.com:636', 'ldaps://ld
 c.LDAPAuthenticator.bind_user_dn = 'CN=imauser,CN=Users,DC=example,DC=com'
 c.LDAPAuthenticator.bind_user_password = 'imapassword'
 c.LDAPAuthenticator.user_search_base = 'CN=Users,DC=example,DC=com'
-c.LDAPAuthenticator.user_search_filter = '(&(objectCategory=person)(objectClass=user)(sAMAccountName={username}))
+c.LDAPAuthenticator.user_search_filter = '(&(objectCategory=person)(objectClass=user)(sAMAccountName={username}))'
 c.LDAPAuthenticator.user_membership_attribute = 'memberOf'
 c.LDAPAuthenticator.group_search_base = 'CN=Groups,DC=example,DC=com'
 c.LDAPAuthenticator.group_search_filter = '(&(objectClass=group)(memberOf={group}))'
