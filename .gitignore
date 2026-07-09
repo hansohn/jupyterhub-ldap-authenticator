@@ -263,3 +263,6 @@ tags
 # End of https://www.toptal.com/developers/gitignore/api/macos,linux,vim,visualstudiocode,python
 
 tfver/_version.py
+
+# setuptools-scm generated version file
+ldapauthenticator/_version.py
