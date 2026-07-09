@@ -385,7 +385,7 @@ Two changes are worth noting:
   `server_tls_strategy = 'on_connect'`. Note the new default `server_tls_strategy`
   is `before_bind` (STARTTLS); if you relied on the previous plaintext default,
   set `server_tls_strategy = 'insecure'` explicitly.
-- The authenticator is now `async`, requiring **JupyterHub >= 2.0**.
+- The authenticator is now `async`, requiring **JupyterHub >= 2.0** and **Python >= 3.10**.
 
 ### Examples
 

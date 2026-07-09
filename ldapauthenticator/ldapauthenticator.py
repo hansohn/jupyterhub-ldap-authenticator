@@ -352,8 +352,8 @@ class LDAPAuthenticator(Authenticator):
     )
 
     @default("create_user_home_dir_cmd")
-    def _default_create_user_home_dir_cmd(self) -> typing.List[str]:
-        home_dir_cmd: typing.List[str]
+    def _default_create_user_home_dir_cmd(self) -> list[str]:
+        home_dir_cmd: list[str]
         if sys.platform == "linux":
             home_dir_cmd = ["mkhomedir_helper"]
         else:
@@ -438,7 +438,7 @@ class LDAPAuthenticator(Authenticator):
         return valid
 
     def create_ldap_server_pool_obj(
-        self, ldap_servers: typing.Optional[typing.List[str]] = None
+        self, ldap_servers: list[str] | None = None
     ) -> ldap3.ServerPool:
         """
         Create ldap3 ServerPool Object
@@ -497,7 +497,7 @@ class LDAPAuthenticator(Authenticator):
             conn = None
         return conn
 
-    def get_nested_groups(self, conn, group: str, _visited=None) -> typing.List[str]:
+    def get_nested_groups(self, conn, group: str, _visited=None) -> list[str]:
         """
         Recursively search group for nested memberships. `_visited` tracks the
         groups already expanded so that cyclic group nesting (legal in Active
@@ -536,7 +536,7 @@ class LDAPAuthenticator(Authenticator):
             conn.unbind()
         return auth_bound
 
-    def _search_attributes(self) -> typing.List[str]:
+    def _search_attributes(self) -> list[str]:
         """
         Compile the list of LDAP attributes to request during the user search:
         the group-membership attribute (when enforcing allowed_groups) plus any
@@ -548,9 +548,7 @@ class LDAPAuthenticator(Authenticator):
         attributes.update(self.auth_state_attributes)
         return list(attributes)
 
-    def _build_auth_response(
-        self, username: str, attributes: typing.Optional[dict]
-    ) -> typing.Union[str, dict]:
+    def _build_auth_response(self, username: str, attributes: dict | None) -> str | dict:
         """
         Build the authenticate() return value, attaching an auth_state mapping of
         the configured auth_state_attributes when requested.
@@ -562,8 +560,8 @@ class LDAPAuthenticator(Authenticator):
         return {"name": username, "auth_state": auth_state}
 
     def _read_user_attributes(
-        self, conn: ldap3.Connection, auth_user_dn: str, attributes: typing.List[str]
-    ) -> typing.Optional[dict]:
+        self, conn: ldap3.Connection, auth_user_dn: str, attributes: list[str]
+    ) -> dict | None:
         """
         Read attributes directly from the authenticating user's own LDAP entry
         (BASE scope). Used by the direct-bind strategy, which has no search
@@ -583,7 +581,7 @@ class LDAPAuthenticator(Authenticator):
         self,
         conn: ldap3.Connection,
         username: str,
-        user_groups: typing.Optional[typing.List[str]],
+        user_groups: list[str] | None,
     ) -> bool:
         """
         Return True if the user's groups intersect allowed_groups (expanding
@@ -615,8 +613,8 @@ class LDAPAuthenticator(Authenticator):
         username: str,
         password: str,
         server_pool: ldap3.ServerPool,
-        conn_servers: typing.List[str],
-    ) -> typing.Optional[typing.Union[str, dict]]:
+        conn_servers: list[str],
+    ) -> str | dict | None:
         """
         Authenticate using the direct-bind strategy: bind to the LDAP server as
         the authenticating user via bind_dn_template, trying each template in
@@ -665,9 +663,7 @@ class LDAPAuthenticator(Authenticator):
         )
         return None
 
-    async def authenticate(
-        self, handler: typing.Any, data: dict
-    ) -> typing.Optional[typing.Union[str, dict]]:
+    async def authenticate(self, handler: typing.Any, data: dict) -> str | dict | None:
         username = data["username"].lower()
         password = data["password"]
 
@@ -692,13 +688,13 @@ class LDAPAuthenticator(Authenticator):
             return self._authenticate_direct_bind(username, password, server_pool, conn_servers)
         return self._authenticate_search_bind(username, password, server_pool, conn_servers)
 
-    def _build_server_pool(self) -> typing.Tuple[ldap3.ServerPool, typing.List[str]]:
+    def _build_server_pool(self) -> tuple[ldap3.ServerPool, list[str]]:
         """
         Build an ldap3 ServerPool from the configured server_hosts, skipping any
         host that fails format validation (invalid hosts are dropped, not fatal).
         """
         server_pool = self.create_ldap_server_pool_obj()
-        conn_servers: typing.List[str] = []
+        conn_servers: list[str] = []
         hosts = self.server_hosts
         if isinstance(hosts, str):
             hosts = hosts.split(",")
@@ -716,8 +712,8 @@ class LDAPAuthenticator(Authenticator):
         username: str,
         password: str,
         server_pool: ldap3.ServerPool,
-        conn_servers: typing.List[str],
-    ) -> typing.Optional[typing.Union[str, dict]]:
+        conn_servers: list[str],
+    ) -> str | dict | None:
         """
         Authenticate using the search-bind strategy: connect as the service
         account, search for the authenticating user, enforce group membership,
