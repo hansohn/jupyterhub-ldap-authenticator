@@ -116,7 +116,7 @@ lint/mypy: $(SRC_DIR)
 	@$(VIRTUALENV_BIN_DIR)/mypy $(SRC_DIR)
 .PHONY: lint/mypy
 
-## Run all linters, validators, and security analyzers
+## Run ruff lint, ruff format check, and mypy
 lint: lint/ruff lint/ruff-format lint/mypy
 .PHONY: lint
 
