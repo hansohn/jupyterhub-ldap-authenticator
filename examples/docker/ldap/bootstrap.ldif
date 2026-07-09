@@ -1,0 +1,60 @@
+# Demo directory seeded into dc=example,dc=org
+# Passwords are stored in plaintext for demo simplicity only.
+
+# --- organizational units ---
+dn: ou=people,dc=example,dc=org
+objectClass: organizationalUnit
+ou: people
+
+dn: ou=groups,dc=example,dc=org
+objectClass: organizationalUnit
+ou: groups
+
+# --- users ---
+# alice: member of jupyterhub-users (allowed)
+dn: uid=alice,ou=people,dc=example,dc=org
+objectClass: inetOrgPerson
+cn: Alice Example
+sn: Example
+uid: alice
+mail: alice@example.org
+userPassword: alicepassword
+
+# bob: member of no allowed group (denied when allowed_groups is set)
+dn: uid=bob,ou=people,dc=example,dc=org
+objectClass: inetOrgPerson
+cn: Bob Example
+sn: Example
+uid: bob
+mail: bob@example.org
+userPassword: bobpassword
+
+# carol: member of data-scientists, which is nested under jupyterhub-users
+dn: uid=carol,ou=people,dc=example,dc=org
+objectClass: inetOrgPerson
+cn: Carol Example
+sn: Example
+uid: carol
+mail: carol@example.org
+userPassword: carolpassword
+
+# --- groups ---
+# groupOfUniqueNames/uniqueMember match the osixia memberof overlay defaults, so
+# the memberOf attribute is auto-populated on members as they are added.
+#
+# NOTE: a child group must be defined BEFORE the parent that references it.
+# The overlay ignores "dangling" references (olcMemberOfDangling: ignore), so if
+# jupyterhub-users listed data-scientists before it existed, data-scientists
+# would never receive memberOf: jupyterhub-users.
+
+# data-scientists is a member of jupyterhub-users -> nested group (defined first)
+dn: cn=data-scientists,ou=groups,dc=example,dc=org
+objectClass: groupOfUniqueNames
+cn: data-scientists
+uniqueMember: uid=carol,ou=people,dc=example,dc=org
+
+dn: cn=jupyterhub-users,ou=groups,dc=example,dc=org
+objectClass: groupOfUniqueNames
+cn: jupyterhub-users
+uniqueMember: uid=alice,ou=people,dc=example,dc=org
+uniqueMember: cn=data-scientists,ou=groups,dc=example,dc=org

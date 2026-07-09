@@ -1,0 +1,34 @@
+name: ldap-auth-demo
+
+services:
+  openldap:
+    image: osixia/openldap:1.5.0
+    command: ["--copy-service"]
+    environment:
+      LDAP_ORGANISATION: Example Inc
+      LDAP_DOMAIN: example.org
+      LDAP_ADMIN_PASSWORD: admin
+    volumes:
+      - ./ldap/bootstrap.ldif:/container/service/slapd/assets/config/bootstrap/ldif/custom/50-bootstrap.ldif:ro
+    ports:
+      - "389:389"
+
+  jupyterhub:
+    build:
+      context: ../..
+      dockerfile: examples/docker/jupyterhub/Dockerfile
+    environment:
+      # switch the strategy: search_bind (default) or direct_bind
+      LDAP_STRATEGY: ${LDAP_STRATEGY:-search_bind}
+      # set to "true" to require membership in an allowed group
+      LDAP_ENABLE_GROUPS: ${LDAP_ENABLE_GROUPS:-false}
+      # required because the demo enables auth_state (demo key — do not reuse)
+      JUPYTERHUB_CRYPT_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+    # mount the config so edits take effect on `docker compose restart jupyterhub`
+    # (no image rebuild required)
+    volumes:
+      - ./jupyterhub/jupyterhub_config.py:/srv/jupyterhub/jupyterhub_config.py:ro
+    depends_on:
+      - openldap
+    ports:
+      - "8000:8000"
