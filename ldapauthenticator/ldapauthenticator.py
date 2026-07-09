@@ -339,6 +339,7 @@ class LDAPAuthenticator(Authenticator):
 
     @default("create_user_home_dir_cmd")
     def _default_create_user_home_dir_cmd(self) -> typing.List[str]:
+        home_dir_cmd: typing.List[str]
         if sys.platform == "linux":
             home_dir_cmd = ["mkhomedir_helper"]
         else:
@@ -351,7 +352,7 @@ class LDAPAuthenticator(Authenticator):
             username = user.name
             user_exists = await maybe_future(self.user_home_dir_exists(username))
             if not user_exists:
-                await maybe_future(self.add_user_home_dir(username))
+                self.add_user_home_dir(username)
         await maybe_future(super().add_user(user))
 
     def user_home_dir_exists(self, username: str) -> bool:
@@ -418,16 +419,16 @@ class LDAPAuthenticator(Authenticator):
             r"[a-z0-9][a-z0-9-]{0,61}[a-z0-9]):"
             r"([0-9]{1,5})$"
         )
-        if bool(ip_address_regex.match(host)):
+        url_match = url_regex.match(host)
+        if ip_address_regex.match(host):
             # using ipv4 address
             valid = True
-        elif bool(hostname_regex.match(host)):
+        elif hostname_regex.match(host):
             # using a hostname address
             valid = True
-        elif bool(url_regex.match(host)):
+        elif url_match:
             # using host url address
-            match = url_regex.match(host)
-            proto = match.group(1)
+            proto = url_match.group(1)
             if proto == "ldaps":
                 self.server_tls_strategy = "on_connect"
             valid = True
@@ -437,7 +438,7 @@ class LDAPAuthenticator(Authenticator):
         return valid
 
     def create_ldap_server_pool_obj(
-        self, ldap_servers: typing.List[str] = None
+        self, ldap_servers: typing.Optional[typing.List[str]] = None
     ) -> ldap3.ServerPool:
         """
         Create ldap3 ServerPool Object

@@ -41,6 +41,6 @@ ignore = ["PLR0911", "PLR0912", "PLR0915", "PLR2004"]
 "tests/*" = ["S101", "S105", "S106", "PLR2004"]
 
 [tool.mypy]
-python_version = "3.8"
+python_version = "3.10"
 ignore_missing_imports = true
 warn_unused_ignores = true
