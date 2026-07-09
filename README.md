@@ -1,33 +1,77 @@
-# jupyterhub-ldap-authenticator
+<div align="center">
+  <h3>jupyterhub-ldap-authenticator</h3>
+  <p>LDAP Authenticator plugin for JupyterHub</p>
+  <p>
+    <!-- Build Status -->
+    <a href="https://github.com/hansohn/jupyterhub-ldap-authenticator/actions/workflows/python.yml">
+      <img src="https://img.shields.io/github/actions/workflow/status/hansohn/jupyterhub-ldap-authenticator/python.yml?branch=master&style=for-the-badge">
+    </a>
+    <!-- PyPI -->
+    <a href="https://pypi.org/project/jupyterhub-ldap-authenticator/">
+      <img src="https://img.shields.io/pypi/v/jupyterhub-ldap-authenticator.svg?style=for-the-badge">
+    </a>
+    <!-- License -->
+    <a href="https://github.com/hansohn/jupyterhub-ldap-authenticator/blob/master/LICENSE">
+      <img src="https://img.shields.io/github/license/hansohn/jupyterhub-ldap-authenticator.svg?style=for-the-badge">
+    </a>
+    <!-- LinkedIn -->
+    <a href="https://linkedin.com/in/ryanhansohn">
+      <img src="https://img.shields.io/badge/-LinkedIn-black.svg?style=for-the-badge&logo=linkedin&colorB=555">
+    </a>
+  </p>
+</div>
 
-LDAP Authenticator plugin for [JupyterHub](https://github.com/jupyterhub/jupyterhub).
-This project was written with Enterprise LDAP integration in mind and includes the
-following features:
+### Description
 
-- Supports multiple LDAP servers and allows for configuration of `server_pool_strategy`
-- Uses single read-only LDAP connection per authentication request
-- Verifies authenticating user exists in LDAP and is a member of `allowed_groups`
-    before testing authentication
-- Supports using nested groups in `allowed_groups` list
-- Supports domain user home directory creation at login
+An LDAP [Authenticator](https://jupyterhub.readthedocs.io/en/stable/reference/authenticators.html)
+plugin for [JupyterHub](https://github.com/jupyterhub/jupyterhub), written with
+Enterprise LDAP and Active Directory integration in mind. It supports:
 
-This project was inspired by the [ldapauthenticator](https://github.com/jupyterhub/ldapauthenticator) project
+- Multiple LDAP servers with configurable high-availability pooling (`server_pool_strategy`)
+- Search-bind authentication using a service account, **or** direct-bind via `bind_dn_template`
+- Modern TLS negotiation (`server_tls_strategy`: `before_bind` / `on_connect` / `insecure`)
+- Group-based access control with `allowed_groups`, including recursive **nested group** resolution
+- Automatic creation of a user's home directory at login
+- Exposing selected LDAP attributes to JupyterHub as `auth_state`
 
-## Installation
+> **Which LDAP authenticator should I use?**
+> The JupyterHub organization maintains an official
+> [`jupyterhub-ldapauthenticator`](https://github.com/jupyterhub/ldapauthenticator)
+> package. This project is a **superset** of it — reach for this plugin when you
+> need any of its distinguishing features: **automatic home-directory creation**,
+> **multi-server failover pooling**, or **nested-group resolution**. For simpler
+> deployments, the official package is an excellent choice.
+
+### Installation
 
 Install with pip:
 
-```
+```bash
 pip install jupyterhub-ldap-authenticator
 ```
 
-## Configuration
+### Configuration
 
-To enable LDAPAuthenticator, add the following line to the Jupyterhub config file and extend configuration with the parameters listed below.
+To enable `LDAPAuthenticator`, add the following to your JupyterHub config file and
+extend it with the parameters below.
 
 ```python
 c.JupyterHub.authenticator_class = 'ldapauthenticator.LDAPAuthenticator'
 ```
+
+#### Authentication strategy
+
+This plugin supports two authentication strategies:
+
+- **Search-bind** (default): connect as a service account (`bind_user_dn` /
+  `bind_user_password`), search the directory for the authenticating user, then
+  verify their password. Requires `bind_user_dn`, `bind_user_password`,
+  `user_search_base`, and `user_search_filter`.
+- **Direct-bind**: bind to the server directly as the authenticating user using
+  `bind_dn_template`, with no service account. Enabled automatically when
+  `bind_dn_template` is set.
+
+#### Server parameters
 
 <dl>
   <dt>LDAPAuthenticator.server_hosts</dt>
@@ -35,7 +79,7 @@ c.JupyterHub.authenticator_class = 'ldapauthenticator.LDAPAuthenticator'
 </dl>
 
 ```python
-# example- list of complete urls
+# example - list of complete urls
 c.LDAPAuthenticator.server_hosts = ['ldaps://ldap1.example.com:636', 'ldaps://ldap2.example.com:636']
 
 # example - list of names
@@ -53,17 +97,37 @@ c.LDAPAuthenticator.server_hosts = ['10.0.0.1', '10.0.0.2']
 ```python
 # example
 c.LDAPAuthenticator.server_port = 636
-  ```
+```
 
 <dl>
-  <dt>LDAPAuthenticator.server_use_ssl</dt>
-  <dd>Boolean specifying if the connection is on a secure port (defaults to False).</dd>
+  <dt>LDAPAuthenticator.server_tls_strategy</dt>
+  <dd>Strategy used to establish a SSL/TLS connection to the LDAP server (defaults to 'before_bind').
+  <ul>
+    <li><code>before_bind</code>: upgrade the connection to SSL/TLS before binding (STARTTLS). Modern, recommended.</li>
+    <li><code>on_connect</code>: establish SSL/TLS directly on connect (legacy LDAPS, typically port 636).</li>
+    <li><code>insecure</code>: do not use SSL/TLS. Credentials are sent in cleartext; only for trusted networks or testing.</li>
+  </ul></dd>
 </dl>
 
 ```python
 # example
-c.LDAPAuthenticator.server_use_ssl = True
+c.LDAPAuthenticator.server_tls_strategy = 'before_bind'
 ```
+
+<dl>
+  <dt>LDAPAuthenticator.server_tls_kwargs</dt>
+  <dd>Dictionary of keyword arguments passed to the ldap3 <code>Tls</code> object, influencing encrypted connections. Ignored when <code>server_tls_strategy='insecure'</code>. See the <a href="https://ldap3.readthedocs.io/en/latest/ssltls.html">ldap3 documentation</a> for details.</dd>
+</dl>
+
+```python
+# example
+c.LDAPAuthenticator.server_tls_kwargs = {'ca_certs_file': '/etc/ssl/certs/ca-bundle.pem'}
+```
+
+<dl>
+  <dt>LDAPAuthenticator.server_use_ssl</dt>
+  <dd><strong>Deprecated since 1.0.</strong> Boolean specifying if the connection is on a secure port. Setting <code>server_use_ssl=True</code> is equivalent to configuring <code>server_tls_strategy='on_connect'</code>. Use <code>server_tls_strategy</code> instead (defaults to False).</dd>
+</dl>
 
 <dl>
   <dt>LDAPAuthenticator.server_connect_timeout</dt>
@@ -125,9 +189,27 @@ c.LDAPAuthenticator.server_pool_exhaust = True
 c.LDAPAuthenticator.server_pool_exhaust = 600
 ```
 
+#### Bind parameters
+
+<dl>
+  <dt>LDAPAuthenticator.bind_dn_template</dt>
+  <dd>Template(s) from which to construct the full DN used to bind directly to the LDAP server as the authenticating user, bypassing the service-account search. '{username}' is replaced with the authenticating username. When set, authentication uses the direct-bind strategy. Accepts a single string or a list of templates (tried in order until one binds). Defaults to None.</dd>
+</dl>
+
+```python
+# example - single template
+c.LDAPAuthenticator.bind_dn_template = 'uid={username},ou=people,dc=example,dc=org'
+
+# example - multiple templates
+c.LDAPAuthenticator.bind_dn_template = [
+    'uid={username},ou=people,dc=example,dc=org',
+    'uid={username},ou=developers,dc=example,dc=org',
+]
+```
+
 <dl>
   <dt>LDAPAuthenticator.bind_user_dn</dt>
-  <dd>The account of the user to log in for simple bind (defaults to None).</dd>
+  <dd>The account of the user to log in for simple bind (defaults to None). Required for the search-bind strategy.</dd>
 </dl>
 
 ```python
@@ -140,13 +222,15 @@ c.LDAPAuthenticator.bind_user_dn = 'CN=imauser,CN=Users,DC=example,DC=com'
 
 <dl>
   <dt>LDAPAuthenticator.bind_user_password</dt>
-  <dd>The password of the user for simple bind (defaults to None).</dd>
+  <dd>The password of the user for simple bind (defaults to None). Required for the search-bind strategy.</dd>
 </dl>
 
 ```python
 # example
 c.LDAPAuthenticator.bind_user_password = 'password'
 ```
+
+#### User and group parameters
 
 <dl>
   <dt>LDAPAuthenticator.user_search_base</dt>
@@ -248,6 +332,8 @@ c.LDAPAuthenticator.username_pattern = '[a-zA-Z0-9_.][a-zA-Z0-9_.-]{0,252}[a-zA-
 c.LDAPAuthenticator.username_pattern = '[a-zA-Z0-9_.][a-zA-Z0-9_.-]{8,20}[a-zA-Z0-9_.$-]?'
 ```
 
+#### Home directory and auth_state parameters
+
 <dl>
   <dt>LDAPAuthenticator.create_user_home_dir</dt>
   <dd>Boolean allowing for user home directory to be created at login</dd>
@@ -260,7 +346,7 @@ c.LDAPAuthenticator.create_user_home_dir = True
 
 <dl>
   <dt>LDAPAuthenticator.create_user_home_dir_cmd</dt>
-  <dd>Command used when creating a userhome directory as a list of strings. The
+  <dd>Command used when creating a user home directory as a list of strings. The
   username will be appended as the final argument. Defaults
   to `mkhomedir_helper` on linux systems.</dd>
 </dl>
@@ -270,8 +356,29 @@ c.LDAPAuthenticator.create_user_home_dir = True
 c.LDAPAuthenticator.create_user_home_dir_cmd = ['mkhomedir_helper']
 ```
 
+<dl>
+  <dt>LDAPAuthenticator.auth_state_attributes</dt>
+  <dd>List of LDAP attributes to fetch for the authenticating user and expose to JupyterHub as <code>auth_state</code>. When set, authentication returns a mapping of the requested attributes. Requires <code>Authenticator.enable_auth_state = True</code> to be persisted (defaults to an empty list).</dd>
+</dl>
 
-## Examples
+```python
+# example
+c.LDAPAuthenticator.auth_state_attributes = ['mail', 'displayName']
+```
+
+### Migrating from 0.x
+
+Version 1.0 is backward compatible — existing configurations continue to work.
+Two changes are worth noting:
+
+- `server_use_ssl` is **deprecated** in favor of `server_tls_strategy`. Setting
+  `server_use_ssl = True` still works but now emits a warning and is translated to
+  `server_tls_strategy = 'on_connect'`. Note the new default `server_tls_strategy`
+  is `before_bind` (STARTTLS); if you relied on the previous plaintext default,
+  set `server_tls_strategy = 'insecure'` explicitly.
+- The authenticator is now `async`, requiring **JupyterHub >= 2.0**.
+
+### Examples
 
 ##### FreeIPA Integration
 
@@ -313,19 +420,34 @@ c.LDAPAuthenticator.create_user_home_dir = True
 c.LDAPAuthenticator.create_user_home_dir_cmd = ['mkhomedir_helper']
 ```
 
-##### OpenLDAP Integration
+##### OpenLDAP Integration (direct-bind)
 
-Because OpenLDAP does not natively support the memberOf attribute in their user objects, the `allowed_groups` scoping has been short-circuited in the following example:
+Because OpenLDAP does not natively populate the `memberOf` attribute on user
+objects, `allowed_groups` scoping is short-circuited below. This example also
+uses the direct-bind strategy, avoiding a service account entirely:
 
 ```python
 # openldap example
 c.JupyterHub.authenticator_class = 'ldapauthenticator.LDAPAuthenticator'
 c.LDAPAuthenticator.server_hosts = ['ldaps://ldap1.example.com:636', 'ldaps://ldap2.example.com:636']
-c.LDAPAuthenticator.bind_user_dn = 'uid=imauser,ou=People,dc=example,dc=com'
-c.LDAPAuthenticator.bind_user_password = 'imapassword'
-c.LDAPAuthenticator.user_search_base = 'ou=People,dc=example,dc=com'
-c.LDAPAuthenticator.user_search_filter = '(&(objectClass=posixAccount)(uid={username}))'
+c.LDAPAuthenticator.bind_dn_template = 'uid={username},ou=People,dc=example,dc=com'
 c.LDAPAuthenticator.username_pattern = '[a-zA-Z0-9_.][a-zA-Z0-9_.-]{0,252}[a-zA-Z0-9_.$-]?'
 c.LDAPAuthenticator.create_user_home_dir = True
 c.LDAPAuthenticator.create_user_home_dir_cmd = ['mkhomedir_helper']
 ```
+
+### Development
+
+This project uses a `Makefile` to drive common tasks. Run `make help` for the
+full list.
+
+```bash
+make venv     # create a virtualenv and install dependencies
+make lint     # run ruff (lint + format check) and mypy
+make test     # run the pytest suite
+make build    # build the sdist/wheel package
+```
+
+### License
+
+[MIT](LICENSE)
