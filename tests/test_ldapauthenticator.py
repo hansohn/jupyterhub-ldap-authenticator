@@ -266,6 +266,26 @@ def test_ldaps_url_sets_on_connect():
     assert auth.server_tls_strategy == "on_connect"
 
 
+@pytest.mark.parametrize(
+    "host",
+    [
+        "ldap.example.com",  # FQDN
+        "localhost",  # single-label hostname
+        "openldap",  # container/service name
+        "10.0.0.1",  # ipv4
+        "ldap://openldap:389",  # url with single-label host
+        "ldaps://ldap.example.com:636",  # url with FQDN
+    ],
+)
+def test_validate_host_accepts_valid_hosts(host):
+    assert LDAPAuthenticator().validate_host(host) is True
+
+
+@pytest.mark.parametrize("host", ["bad!!host", "ldap://:389", "has space"])
+def test_validate_host_rejects_invalid_hosts(host):
+    assert LDAPAuthenticator().validate_host(host) is False
+
+
 # ---------------------------------------------------------------------------
 # server pool assembly and home-dir command
 # ---------------------------------------------------------------------------
