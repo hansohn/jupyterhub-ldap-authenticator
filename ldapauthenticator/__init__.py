@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # MIT License
 #
 # Copyright (c) 2018 Ryan Hansohn
@@ -26,3 +25,5 @@ ldapauthenticator utilizes the LDAPAuthenticator class functionality
 """
 
 from ldapauthenticator.ldapauthenticator import LDAPAuthenticator
+
+__all__ = ["LDAPAuthenticator"]
