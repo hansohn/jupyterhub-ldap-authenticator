@@ -34,9 +34,9 @@ import typing
 from jupyterhub.auth import Authenticator
 from jupyterhub.orm import User
 from jupyterhub.traitlets import Command
+from jupyterhub.utils import maybe_future
 import ldap3
 import ldap3.core.exceptions
-from tornado import gen, web
 from traitlets import Any, Int, Bool, List, Unicode, Union, default, observe
 
 
@@ -263,14 +263,13 @@ class LDAPAuthenticator(Authenticator):
             home_dir_cmd = list()
         return home_dir_cmd
 
-    @gen.coroutine
-    def add_user(self, user: User) -> typing.Generator:
+    async def add_user(self, user: User) -> None:
         if self.create_user_home_dir:
             username = user.name
-            user_exists = yield gen.maybe_future(self.user_home_dir_exists(username))
+            user_exists = await maybe_future(self.user_home_dir_exists(username))
             if not user_exists:
-                yield gen.maybe_future(self.add_user_home_dir(username))
-        yield gen.maybe_future(super().add_user(user))
+                await maybe_future(self.add_user_home_dir(username))
+        await maybe_future(super().add_user(user))
 
     def user_home_dir_exists(self, username: str) -> bool:
         """
@@ -426,8 +425,7 @@ class LDAPAuthenticator(Authenticator):
             conn.unbind()
         return auth_bound
 
-    @gen.coroutine
-    def authenticate(self, handler: web.RequestHandler, data: dict) -> typing.Optional[str]:
+    async def authenticate(self, handler: typing.Any, data: dict) -> typing.Optional[str]:
 
         # define vars
         username = data['username']
