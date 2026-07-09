@@ -119,9 +119,18 @@ c.LDAPAuthenticator.server_tls_strategy = 'before_bind'
   <dd>Dictionary of keyword arguments passed to the ldap3 <code>Tls</code> object, influencing encrypted connections. Ignored when <code>server_tls_strategy='insecure'</code>. See the <a href="https://ldap3.readthedocs.io/en/latest/ssltls.html">ldap3 documentation</a> for details.</dd>
 </dl>
 
+> **Certificate validation.** By default the underlying ldap3 `Tls` object does
+> **not** verify the server's certificate (`validate=ssl.CERT_NONE`), so `before_bind`
+> and `on_connect` encrypt the connection but do not authenticate the server. To
+> enable verification against a CA bundle, set `server_tls_kwargs` accordingly:
+
 ```python
-# example
-c.LDAPAuthenticator.server_tls_kwargs = {'ca_certs_file': '/etc/ssl/certs/ca-bundle.pem'}
+import ssl
+# example - encrypt AND verify the server certificate
+c.LDAPAuthenticator.server_tls_kwargs = {
+    'validate': ssl.CERT_REQUIRED,
+    'ca_certs_file': '/etc/ssl/certs/ca-bundle.pem',
+}
 ```
 
 <dl>

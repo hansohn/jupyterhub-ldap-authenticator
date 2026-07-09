@@ -78,6 +78,8 @@ class FakeConnection:
     def __init__(self, directory, bind_result=True):
         self._dir = directory
         self._bind_result = bind_result
+        # ldap3 sets Connection.bound after a successful auto_bind; mirror that
+        self.bound = bind_result
         self.response = []
         self.unbound = False
 

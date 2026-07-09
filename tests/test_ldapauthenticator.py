@@ -279,6 +279,48 @@ def test_multi_host_pool_assembly():
     assert len(pool.servers) == 2
 
 
+def test_build_server_pool_skips_invalid_host():
+    # regression: a malformed host must not drop subsequent valid hosts (was a
+    # `break` that aborted the whole loop instead of skipping the bad entry)
+    auth = LDAPAuthenticator()
+    auth.server_hosts = ["bad!!host", "ldap1.example.com", "ldap2.example.com"]
+    pool, conn_servers = auth._build_server_pool()
+    assert conn_servers == ["ldap1.example.com", "ldap2.example.com"]
+    assert len(pool.servers) == 2
+
+
+def test_authenticate_survives_leading_invalid_host(make_authenticator):
+    # end-to-end: an invalid first host would previously drop the valid one and
+    # fail auth entirely
+    auth = make_authenticator(
+        alice_directory(),
+        server_hosts=["bad!!host", "ldap.example.com"],
+        bind_user_dn="cn=svc,dc=example,dc=org",
+        bind_user_password="svcpass",
+        user_search_base=USER_BASE,
+        user_search_filter="(uid={username})",
+    )
+    assert run(auth.authenticate(None, {"username": "alice", "password": "secret"})) == "alice"
+
+
+def test_nested_groups_cycle_terminates(make_authenticator):
+    # regression: cyclic group nesting (parent <-> child) must not recurse forever
+    parent = "cn=parent,ou=groups,dc=example,dc=org"
+    child = "cn=child,ou=groups,dc=example,dc=org"
+    auth = make_authenticator(
+        alice_directory(groups=[child], nested={parent: [child], child: [parent]}),
+        bind_user_dn="cn=svc,dc=example,dc=org",
+        bind_user_password="svcpass",
+        user_search_base=USER_BASE,
+        user_search_filter="(uid={username})",
+        group_search_base=GROUP_BASE,
+        group_search_filter="(memberOf={group})",
+        allowed_groups=[parent],
+        allow_nested_groups=True,
+    )
+    assert run(auth.authenticate(None, {"username": "alice", "password": "secret"})) == "alice"
+
+
 def test_default_home_dir_cmd_on_linux(monkeypatch):
     monkeypatch.setattr("sys.platform", "linux")
     auth = LDAPAuthenticator()

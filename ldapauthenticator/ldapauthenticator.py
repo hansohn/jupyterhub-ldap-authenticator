@@ -39,6 +39,20 @@ from jupyterhub.traitlets import Command
 from jupyterhub.utils import maybe_future
 from traitlets import Any, Bool, Dict, Enum, Int, List, Unicode, Union, default, observe
 
+# Host format patterns, compiled once at import (used by validate_host).
+_IP_ADDRESS_RE = re.compile(
+    r"^(?:(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\.){3}"
+    r"(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])$"
+)
+_HOSTNAME_RE = re.compile(
+    r"^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9][a-z0-9-]{0,61}[a-z0-9]$"
+)
+_URL_RE = re.compile(
+    r"^(ldaps?)://"
+    r"((?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9][a-z0-9-]{0,61}[a-z0-9]):"
+    r"([0-9]{1,5})$"
+)
+
 
 class LDAPAuthenticator(Authenticator):
     """
@@ -405,25 +419,11 @@ class LDAPAuthenticator(Authenticator):
         Validate hostname
         Return True if host is valid, False otherwise.
         """
-        ip_address_regex = re.compile(
-            r"^(?:(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\.){3}"
-            r"(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])$"
-        )
-        hostname_regex = re.compile(
-            r"^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+"
-            r"[a-z0-9][a-z0-9-]{0,61}[a-z0-9]$"
-        )
-        url_regex = re.compile(
-            r"^(ldaps?)://"
-            r"((?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+"
-            r"[a-z0-9][a-z0-9-]{0,61}[a-z0-9]):"
-            r"([0-9]{1,5})$"
-        )
-        url_match = url_regex.match(host)
-        if ip_address_regex.match(host):
+        url_match = _URL_RE.match(host)
+        if _IP_ADDRESS_RE.match(host):
             # using ipv4 address
             valid = True
-        elif hostname_regex.match(host):
+        elif _HOSTNAME_RE.match(host):
             # using a hostname address
             valid = True
         elif url_match:
@@ -497,10 +497,17 @@ class LDAPAuthenticator(Authenticator):
             conn = None
         return conn
 
-    def get_nested_groups(self, conn, group: str) -> typing.List[str]:
+    def get_nested_groups(self, conn, group: str, _visited=None) -> typing.List[str]:
         """
-        Recursively search group for nested memberships
+        Recursively search group for nested memberships. `_visited` tracks the
+        groups already expanded so that cyclic group nesting (legal in Active
+        Directory) does not cause infinite recursion.
         """
+        if _visited is None:
+            _visited = set()
+        if group in _visited:
+            return []
+        _visited.add(group)
         nested_groups = list()
         conn.search(
             search_base=self.group_search_base,
@@ -509,12 +516,11 @@ class LDAPAuthenticator(Authenticator):
         )
         if conn.response:
             for nested_group in conn.response:
-                if "dn" in nested_group:
-                    nested_groups.extend([nested_group["dn"]])
-                    groups = self.get_nested_groups(conn, nested_group["dn"])
-                    nested_groups.extend(groups)
-        nested_groups = list(set(nested_groups))
-        return nested_groups
+                dn = nested_group.get("dn")
+                if dn:
+                    nested_groups.append(dn)
+                    nested_groups.extend(self.get_nested_groups(conn, dn, _visited))
+        return list(set(nested_groups))
 
     def test_auth(self, conn: ldap3.Connection, auth_user_dn: str, password: str) -> bool:
         """
@@ -573,24 +579,16 @@ class LDAPAuthenticator(Authenticator):
             return conn.response[0]["attributes"]
         return None
 
-    def _user_in_allowed_groups(
-        self, conn: ldap3.Connection, username: str, auth_user_dn: str
+    def _user_allowed(
+        self,
+        conn: ldap3.Connection,
+        username: str,
+        user_groups: typing.Optional[typing.List[str]],
     ) -> bool:
         """
-        Enforce allowed_groups membership for the direct-bind strategy by reading
-        the user's group-membership attribute from their own entry.
+        Return True if the user's groups intersect allowed_groups (expanding
+        nested groups when enabled). Shared by both authentication strategies.
         """
-        user_attributes = self._read_user_attributes(
-            conn, auth_user_dn, [self.user_membership_attribute]
-        )
-        if not user_attributes:
-            self.log.error(
-                f"Could not read '{self.user_membership_attribute}' "
-                f"attribute for user '{username}'."
-            )
-            return False
-        user_groups = user_attributes.get(self.user_membership_attribute) or []
-
         # normalize allowed_groups (Union of str or list) and expand nested groups
         permitted_groups = self.allowed_groups
         if isinstance(permitted_groups, str):
@@ -600,7 +598,7 @@ class LDAPAuthenticator(Authenticator):
             for group in list(permitted_groups):
                 permitted_groups.extend(self.get_nested_groups(conn, group))
 
-        allowed_memberships = list(set(user_groups).intersection(permitted_groups))
+        allowed_memberships = list(set(user_groups or []).intersection(permitted_groups))
         if allowed_memberships:
             self.log.debug(
                 f"User '{username}' found in the following allowed ldap "
@@ -636,7 +634,7 @@ class LDAPAuthenticator(Authenticator):
             auth_user_dn = template.format(username=username)
             self.log.debug(f"Attempting direct bind to {conn_servers} as '{auth_user_dn}'.")
             conn = self.ldap_connection(server_pool, auth_user_dn, password)
-            if not conn or not conn.bind():
+            if not conn or not conn.bound:
                 self.log.debug(f"Direct bind failed for '{auth_user_dn}'.")
                 continue
 
@@ -644,21 +642,21 @@ class LDAPAuthenticator(Authenticator):
                 f"User '{username}' successfully authenticated against ldap server {conn_servers}."
             )
 
+            # read membership + auth_state attributes from the user's own entry in
+            # a single BASE search (the direct-bind strategy has no prior search
+            # response to draw from)
+            wanted = self._search_attributes()
+            user_attributes = self._read_user_attributes(conn, auth_user_dn, wanted) or {}
+
             # optional group membership enforcement
-            if self.allowed_groups and not self._user_in_allowed_groups(
-                conn, username, auth_user_dn
+            if self.allowed_groups and not self._user_allowed(
+                conn, username, user_attributes.get(self.user_membership_attribute)
             ):
                 conn.unbind()
                 return None
 
-            # optional auth_state attributes
-            attributes = None
-            if self.auth_state_attributes:
-                attributes = self._read_user_attributes(
-                    conn, auth_user_dn, self.auth_state_attributes
-                )
-
             conn.unbind()
+            attributes = user_attributes if self.auth_state_attributes else None
             return self._build_auth_response(username, attributes)
 
         self.log.error(
@@ -670,15 +668,10 @@ class LDAPAuthenticator(Authenticator):
     async def authenticate(
         self, handler: typing.Any, data: dict
     ) -> typing.Optional[typing.Union[str, dict]]:
-
-        # define vars
-        username = data["username"]
+        username = data["username"].lower()
         password = data["password"]
-        server_pool = self.create_ldap_server_pool_obj()
-        conn_servers = list()
 
         # validate credentials
-        username = username.lower()
         if not self.validate_username(username):
             self.log.error("Unsupported username supplied")
             return None
@@ -686,39 +679,50 @@ class LDAPAuthenticator(Authenticator):
             self.log.error("Empty password supplied")
             return None
 
-        # cast server_hosts to list
-        if isinstance(self.server_hosts, str):
-            self.server_hosts = self.server_hosts.split(",")
-
-        # validate hosts and populate server_pool object
-        for raw_host in self.server_hosts:
-            host = raw_host.strip().lower()
-            if not self.validate_host(host):
-                self.log.warning(
-                    (
-                        "Host '{}' not supplied in approved format. "
-                        + "Removing host from Server Pool"
-                    ).format(host)
-                )
-                break
-            server = self.create_ldap_server_obj(host)
-            server_pool.add(server)
-            conn_servers.extend([host])
-
-        # verify ldap connection object parameters are defined
+        # build the server pool from configured hosts
+        server_pool, conn_servers = self._build_server_pool()
         if not server_pool.servers:
             self.log.error(
                 "No hosts provided. ldap connection requires at least 1 host to connect to."
             )
             return None
 
-        # direct-bind strategy: bind to the server as the authenticating user
-        # using bind_dn_template, bypassing the service-account search.
+        # dispatch to the configured authentication strategy
         if self.bind_dn_template:
             return self._authenticate_direct_bind(username, password, server_pool, conn_servers)
+        return self._authenticate_search_bind(username, password, server_pool, conn_servers)
 
-        # search-bind strategy: connect as the service account and search for
-        # the authenticating user before verifying their password.
+    def _build_server_pool(self) -> typing.Tuple[ldap3.ServerPool, typing.List[str]]:
+        """
+        Build an ldap3 ServerPool from the configured server_hosts, skipping any
+        host that fails format validation (invalid hosts are dropped, not fatal).
+        """
+        server_pool = self.create_ldap_server_pool_obj()
+        conn_servers: typing.List[str] = []
+        hosts = self.server_hosts
+        if isinstance(hosts, str):
+            hosts = hosts.split(",")
+        for raw_host in hosts:
+            host = raw_host.strip().lower()
+            if not self.validate_host(host):
+                self.log.warning(f"Host '{host}' not supplied in approved format. Skipping host.")
+                continue
+            server_pool.add(self.create_ldap_server_obj(host))
+            conn_servers.append(host)
+        return server_pool, conn_servers
+
+    def _authenticate_search_bind(
+        self,
+        username: str,
+        password: str,
+        server_pool: ldap3.ServerPool,
+        conn_servers: typing.List[str],
+    ) -> typing.Optional[typing.Union[str, dict]]:
+        """
+        Authenticate using the search-bind strategy: connect as the service
+        account, search for the authenticating user, enforce group membership,
+        then verify the user's password by rebinding as them.
+        """
         if self.bind_user_dn is None or not self.bind_user_dn.strip():
             self.log.error("'bind_user_dn' config value undefined. required for ldap connection")
             return None
@@ -727,8 +731,6 @@ class LDAPAuthenticator(Authenticator):
                 "'bind_user_password' config value undefined. required for ldap connection"
             )
             return None
-
-        # verify ldap search object parameters are defined
         if not self.user_search_base or not self.user_search_base.strip():
             self.log.error("'user_search_base' config value undefined. required for ldap search")
             return None
@@ -736,153 +738,71 @@ class LDAPAuthenticator(Authenticator):
             self.log.error("'user_search_filter' config value undefined. required for ldap search")
             return None
 
-        # open ldap connection and authenticate
         self.log.debug(
             f"Attempting ldap connection to {conn_servers} with user '{self.bind_user_dn}'"
         )
         conn = self.ldap_connection(server_pool, self.bind_user_dn, self.bind_user_password)
-
-        # proceed if connection has been established
-        if not conn or not conn.bind():
+        if not conn or not conn.bound:
             self.log.error(
-                (
-                    "Could not establish ldap connection to {} using '{}' "
-                    + "and supplied bind_user_password."
-                ).format(conn_servers, self.bind_user_dn)
+                f"Could not establish ldap connection to {conn_servers} using "
+                f"'{self.bind_user_dn}' and supplied bind_user_password."
             )
             return None
-        else:
-            self.log.debug(
-                f"Successfully established connection to {conn_servers} "
-                f"with user '{self.bind_user_dn}'"
-            )
 
-            # format user search filter
-            auth_user_search_filter = self.user_search_filter.format(username=username)
+        self.log.debug(
+            f"Successfully established connection to {conn_servers} with user '{self.bind_user_dn}'"
+        )
+        auth_user_search_filter = self.user_search_filter.format(username=username)
+        self.log.debug(f"Attempting LDAP search using search_filter '{auth_user_search_filter}'.")
+        conn.search(
+            search_base=self.user_search_base,
+            search_filter=auth_user_search_filter,
+            search_scope=ldap3.SUBTREE,
+            attributes=self._search_attributes(),
+            paged_size=2,
+        )
 
-            # search for authenticating user in ldap
-            self.log.debug(
-                f"Attempting LDAP search using search_filter '{auth_user_search_filter}'."
+        # exactly one user entry must match
+        if not conn.response or len(conn.response) > 1:
+            self.log.error(
+                f"LDAP search '{auth_user_search_filter}' returned {len(conn.response)} "
+                f"results. Please narrow search to 1 result."
             )
-            conn.search(
-                search_base=self.user_search_base,
-                search_filter=auth_user_search_filter,
-                search_scope=ldap3.SUBTREE,
-                attributes=self._search_attributes(),
-                paged_size=2,
-            )
+            return None
 
-            # handle abnormal search results
-            if not conn.response or len(conn.response) > 1:
+        search_response = conn.response[0]
+        auth_user_dn = search_response.get("dn")
+        if not auth_user_dn or not auth_user_dn.strip():
+            self.log.error(
+                f"Search results for user '{username}' returned 'dn' attribute "
+                f"with undefined or null value."
+            )
+            conn.unbind()
+            return None
+
+        # enforce group membership before verifying the password
+        if self.allowed_groups:
+            user_groups = (search_response.get("attributes") or {}).get(
+                self.user_membership_attribute
+            )
+            if not user_groups:
                 self.log.error(
-                    (
-                        "LDAP search '{}' returned {} results. "
-                        + "Please narrow search to 1 result"
-                    ).format(auth_user_search_filter, len(conn.response))
+                    f"Search results for user '{username}' returned no "
+                    f"'{self.user_membership_attribute}' group membership values."
                 )
+                conn.unbind()
                 return None
-            elif self.allowed_groups and "attributes" not in conn.response[0].keys():
-                self.log.error(
-                    (
-                        "LDAP search '{}' did not return results for requested "
-                        + "search attribute(s) '{}'"
-                    ).format(auth_user_search_filter, self.user_membership_attribute)
-                )
+            if not self._user_allowed(conn, username, user_groups):
+                conn.unbind()
                 return None
-            else:
-                self.log.debug(
-                    f"LDAP search '{auth_user_search_filter}' found {len(conn.response)} result(s)."
-                )
 
-                # copy response to var
-                search_response = conn.response[0]
-
-                # get authenticating user's ldap attributes
-                if "dn" not in search_response or not search_response["dn"].strip():
-                    self.log.error(
-                        (
-                            "Search results for user '{}' returned 'dn' attribute with "
-                            + "undefined or null value."
-                        ).format(username)
-                    )
-                    conn.unbind()
-                    return None
-                else:
-                    self.log.debug(
-                        "Search results for user '{}' returned 'dn' attribute as '{}'".format(
-                            username, search_response["dn"]
-                        )
-                    )
-                    auth_user_dn = search_response["dn"]
-
-                # is authenticating user allowed
-                if self.allowed_groups:
-                    # compile list of user groups
-                    if not search_response["attributes"][self.user_membership_attribute]:
-                        self.log.error(
-                            (
-                                "Search results for user '{}' returned '{}' attribute "
-                                + "with undefined or null value."
-                            ).format(username, self.user_membership_attribute)
-                        )
-                        conn.unbind()
-                        return None
-                    else:
-                        self.log.debug(
-                            "Search results for user '{}' returned '{}' attribute as {}".format(
-                                username,
-                                self.user_membership_attribute,
-                                search_response["attributes"][self.user_membership_attribute],
-                            )
-                        )
-                        user_groups = search_response["attributes"][self.user_membership_attribute]
-
-                    # compile list of permitted groups
-                    permitted_groups = list()
-                    permitted_groups.extend(self.allowed_groups)
-                    if self.allow_nested_groups:
-                        for group in self.allowed_groups:
-                            nested_groups = self.get_nested_groups(conn, group)
-                            permitted_groups.extend(nested_groups)
-
-                    # is authenticating user a member of permitted_groups
-                    allowed_memberships = list(set(user_groups).intersection(permitted_groups))
-                    if allowed_memberships:
-                        self.log.debug(
-                            (
-                                "User '{}' found in the following allowed ldap groups "
-                                + "{}. Proceeding with authentication."
-                            ).format(username, allowed_memberships)
-                        )
-                    else:
-                        self.log.error(
-                            f"User '{username}' is not a member of any "
-                            f"permitted groups {permitted_groups}"
-                        )
-                        return None
-                else:
-                    self.log.debug(
-                        (
-                            "User '{}' will not be verified against allowed_groups due "
-                            + "to feature short-circuiting. Proceeding with "
-                            + "authentication."
-                        ).format(username)
-                    )
-
-                # return auth results
-                auth_bound = self.test_auth(conn, auth_user_dn, password) or False
-                if auth_bound:
-                    self.log.info(
-                        f"User '{username}' successfully authenticated "
-                        f"against ldap server {conn_servers}."
-                    )
-                    auth_response = self._build_auth_response(
-                        username, search_response.get("attributes")
-                    )
-                else:
-                    self.log.error(
-                        f"User '{conn_servers}' authentication failed "
-                        f"against ldap server {auth_user_dn}."
-                    )
-                    auth_response = None
-                return auth_response
+        # verify the user's password by rebinding as them
+        if not self.test_auth(conn, auth_user_dn, password):
+            self.log.error(
+                f"User '{username}' authentication failed against ldap server {conn_servers}."
+            )
+            return None
+        self.log.info(
+            f"User '{username}' successfully authenticated against ldap server {conn_servers}."
+        )
+        return self._build_auth_response(username, search_response.get("attributes"))
