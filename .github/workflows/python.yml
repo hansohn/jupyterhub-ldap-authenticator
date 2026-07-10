@@ -6,13 +6,13 @@ on:
   push:
     branches:
       - '*'
-    pull_request:
-      types:
-        - opened
-        - reopened
-        - synchronize
     tags:
       - 'v?[0-9]+.[0-9]+.[0-9]+'
+  pull_request:
+    types:
+      - opened
+      - reopened
+      - synchronize
 
 env:
   PYTHON_VERSION: 3.12
