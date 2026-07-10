@@ -27,6 +27,7 @@ LDAP Authenticator plugin for JupyterHub
 import os
 import pwd
 import re
+import ssl
 import subprocess
 import sys
 import typing
@@ -156,6 +157,20 @@ class LDAPAuthenticator(Authenticator):
         help="""
         Timeout in seconds permitted for responses from established ldap
         connections before raising an exception (defaults to None).
+        """,
+    )
+
+    server_auto_referrals = Bool(
+        default_value=False,
+        config=True,
+        help="""
+        Whether ldap3 should automatically follow referrals returned by the
+        server. Disabled by default: when enabled, ldap3 re-sends the bind
+        credentials to the referred server, which can leak credentials to a
+        server chosen by the directory (e.g. a rogue or compromised domain
+        controller). Only enable this if you specifically require cross-server
+        referral chasing and trust every server that may be referred
+        (defaults to False).
         """,
     )
 
@@ -457,6 +472,24 @@ class LDAPAuthenticator(Authenticator):
         )
         return server_pool
 
+    def _warn_insecure_tls(self) -> None:
+        """
+        Emit a one-time warning when TLS is used without server certificate
+        validation (encrypted but unauthenticated, i.e. MITM-vulnerable).
+        """
+        if getattr(self, "_insecure_tls_warned", False):
+            return
+        self._insecure_tls_warned = True
+        self.log.warning(
+            "LDAPAuthenticator is using TLS (server_tls_strategy=%r) without "
+            "server certificate validation (ldap3 Tls validate=CERT_NONE). The "
+            "connection is encrypted but the server identity is NOT verified, "
+            "leaving credentials vulnerable to man-in-the-middle attacks. "
+            "Configure server_tls_kwargs with validate=ssl.CERT_REQUIRED and a "
+            "ca_certs_file (or ca_certs_path).",
+            self.server_tls_strategy,
+        )
+
     def create_ldap_server_obj(self, host: str) -> ldap3.Server:
         """
         Create ldap3 Server Object
@@ -464,6 +497,8 @@ class LDAPAuthenticator(Authenticator):
         tls = None
         if self.server_tls_strategy != "insecure":
             tls = ldap3.Tls(**self.server_tls_kwargs)
+            if self.server_tls_kwargs.get("validate", ssl.CERT_NONE) == ssl.CERT_NONE:
+                self._warn_insecure_tls()
         server = ldap3.Server(
             host,
             port=self.server_port,
@@ -492,6 +527,7 @@ class LDAPAuthenticator(Authenticator):
                 user=username,
                 password=password,
                 auto_bind=auto_bind,
+                auto_referrals=self.server_auto_referrals,
                 read_only=True,
                 receive_timeout=self.server_receive_timeout,
             )

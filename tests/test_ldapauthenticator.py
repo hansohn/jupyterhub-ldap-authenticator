@@ -1,6 +1,7 @@
 """Behavioral tests for LDAPAuthenticator against an in-memory LDAP fake."""
 
 import asyncio
+import ssl
 
 import ldap3
 import pytest
@@ -292,6 +293,53 @@ def test_tls_strategy_insecure_no_tls():
     server = auth.create_ldap_server_obj("ldap.example.com")
     assert server.ssl is False
     assert server.tls is None
+
+
+# ---------------------------------------------------------------------------
+# security hardening: TLS validation warning and referral chasing
+# ---------------------------------------------------------------------------
+
+
+def test_tls_without_validation_warns():
+    # TLS active but no cert validation -> one-time MITM warning path taken
+    auth = LDAPAuthenticator()
+    auth.server_tls_strategy = "before_bind"
+    auth.create_ldap_server_obj("ldap.example.com")
+    assert auth._insecure_tls_warned is True
+
+
+def test_tls_with_validation_does_not_warn():
+    auth = LDAPAuthenticator()
+    auth.server_tls_strategy = "before_bind"
+    auth.server_tls_kwargs = {"validate": ssl.CERT_REQUIRED}
+    auth.create_ldap_server_obj("ldap.example.com")
+    assert getattr(auth, "_insecure_tls_warned", False) is False
+
+
+def test_insecure_strategy_does_not_warn_about_tls():
+    auth = LDAPAuthenticator()
+    auth.server_tls_strategy = "insecure"
+    auth.create_ldap_server_obj("ldap.example.com")
+    assert getattr(auth, "_insecure_tls_warned", False) is False
+
+
+def test_auto_referrals_default_false():
+    assert LDAPAuthenticator().server_auto_referrals is False
+
+
+def test_ldap_connection_disables_referrals(monkeypatch):
+    captured = {}
+
+    class FakeConn:
+        def __init__(self, *args, **kwargs):
+            captured.update(kwargs)
+
+    monkeypatch.setattr(ldap3, "Connection", FakeConn)
+    auth = LDAPAuthenticator()
+    pool = auth.create_ldap_server_pool_obj()
+    auth.ldap_connection(pool, "cn=svc,dc=example,dc=org", "pw")
+    assert captured["auto_referrals"] is False
+    assert captured["read_only"] is True
 
 
 def test_server_use_ssl_deprecation_shim():

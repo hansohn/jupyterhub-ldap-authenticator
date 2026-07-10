@@ -95,14 +95,17 @@ Fully worked configurations for each strategy are in [Examples](#examples).
 | `server_use_ssl` | **Deprecated since 1.0.** `True` is equivalent to `server_tls_strategy='on_connect'`. Use `server_tls_strategy` instead. | `False` |
 | `server_connect_timeout` | Timeout, in seconds, when establishing a connection before raising an exception. | `None` |
 | `server_receive_timeout` | Timeout, in seconds, for responses from an established connection before raising an exception. | `None` |
+| `server_auto_referrals` | Whether ldap3 automatically follows server referrals. Disabled by default because chasing a referral re-sends the bind credentials to the referred server, which can leak them to a server chosen by the directory. Enable only if you require referral chasing and trust every server that may be referred. | `False` |
 | `server_pool_strategy` | Pool HA strategy: `FIRST`, `ROUND_ROBIN`, or `RANDOM`. | `FIRST` |
 | `server_pool_active` | If `True`, check server availability. Set to an integer for the maximum number of cycles to try before giving up. | `True` |
 | `server_pool_exhaust` | If `True`, remove inactive servers from the pool. Set to an integer for the number of seconds an unreachable server is considered offline. | `False` |
 
-> **Certificate validation.** By default the ldap3 `Tls` object does **not** verify
+> **⚠️ Certificate validation.** By default the ldap3 `Tls` object does **not** verify
 > the server's certificate (`validate=ssl.CERT_NONE`), so `before_bind` and
-> `on_connect` encrypt the connection but do not authenticate the server. To enable
-> verification against a CA bundle, set `server_tls_kwargs`:
+> `on_connect` encrypt the connection but do **not** authenticate the server —
+> leaving credentials exposed to man-in-the-middle attacks. When TLS is enabled
+> without validation, the authenticator logs a warning at startup. **For production,
+> enable verification against a CA bundle** via `server_tls_kwargs`:
 >
 > ```python
 > import ssl
