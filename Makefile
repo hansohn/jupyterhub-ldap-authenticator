@@ -167,9 +167,6 @@ DOCKER_TAGS += --tag $(DOCKER_TAG_BASE):$(GIT_HASH)
 ifeq ($(GIT_BRANCH), main)
 DOCKER_TAGS += --tag $(DOCKER_TAG_BASE):latest
 endif
-ifeq ($(GIT_BRANCH), master)
-DOCKER_TAGS += --tag $(DOCKER_TAG_BASE):latest
-endif
 
 DOCKER_BUILD_PATH ?= .
 DOCKER_BUILD_ARGS ?=

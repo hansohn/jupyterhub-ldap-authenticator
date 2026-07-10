@@ -4,14 +4,14 @@
   <p>
     <!-- Build Status -->
     <a href="https://github.com/hansohn/jupyterhub-ldap-authenticator/actions/workflows/python.yml">
-      <img src="https://img.shields.io/github/actions/workflow/status/hansohn/jupyterhub-ldap-authenticator/python.yml?branch=master&style=for-the-badge">
+      <img src="https://img.shields.io/github/actions/workflow/status/hansohn/jupyterhub-ldap-authenticator/python.yml?branch=main&style=for-the-badge">
     </a>
     <!-- PyPI -->
     <a href="https://pypi.org/project/jupyterhub-ldap-authenticator/">
       <img src="https://img.shields.io/pypi/v/jupyterhub-ldap-authenticator.svg?style=for-the-badge">
     </a>
     <!-- License -->
-    <a href="https://github.com/hansohn/jupyterhub-ldap-authenticator/blob/master/LICENSE">
+    <a href="https://github.com/hansohn/jupyterhub-ldap-authenticator/blob/main/LICENSE">
       <img src="https://img.shields.io/github/license/hansohn/jupyterhub-ldap-authenticator.svg?style=for-the-badge">
     </a>
   </p>
