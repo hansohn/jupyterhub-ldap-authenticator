@@ -1,0 +1,39 @@
+# Reduce the Docker build context. Both Dockerfiles (the root package image and
+# examples/docker/jupyterhub) build from the repository root, so this applies to
+# both. Paths a Dockerfile needs are intentionally NOT ignored: dist/,
+# pyproject.toml, README.md, ldapauthenticator/, and examples/.
+
+# Version control
+.git
+.gitignore
+.gitattributes
+
+# Python virtual environments (the .venv alone is hundreds of MB)
+.venv
+venv
+ENV
+env
+
+# Python caches and build artifacts (dist/ is intentionally kept)
+__pycache__
+*.py[cod]
+*.egg-info
+.eggs
+build
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.tox
+.coverage
+htmlcov
+
+# Tests, docs, and CI (not needed in any image)
+tests
+docs
+.github
+
+# Editor / OS cruft
+.idea
+.vscode
+*.swp
+.DS_Store
