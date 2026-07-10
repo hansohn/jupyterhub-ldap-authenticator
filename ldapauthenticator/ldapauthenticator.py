@@ -37,6 +37,8 @@ from jupyterhub.auth import Authenticator
 from jupyterhub.orm import User
 from jupyterhub.traitlets import Command
 from jupyterhub.utils import maybe_future
+from ldap3.utils.conv import escape_filter_chars
+from ldap3.utils.dn import escape_rdn
 from traitlets import Any, Bool, Dict, Enum, Int, List, Unicode, Union, default, observe
 
 # Host format patterns, compiled once at import (used by validate_host).
@@ -633,7 +635,8 @@ class LDAPAuthenticator(Authenticator):
             return None
 
         for template in templates:
-            auth_user_dn = template.format(username=username)
+            # escape the username as a DN component to prevent DN injection
+            auth_user_dn = template.format(username=escape_rdn(username))
             self.log.debug(f"Attempting direct bind to {conn_servers} as '{auth_user_dn}'.")
             conn = self.ldap_connection(server_pool, auth_user_dn, password)
             if not conn or not conn.bound:
@@ -752,7 +755,11 @@ class LDAPAuthenticator(Authenticator):
         self.log.debug(
             f"Successfully established connection to {conn_servers} with user '{self.bind_user_dn}'"
         )
-        auth_user_search_filter = self.user_search_filter.format(username=username)
+        # escape the username before interpolating it into the LDAP filter to
+        # prevent LDAP search filter injection
+        auth_user_search_filter = self.user_search_filter.format(
+            username=escape_filter_chars(username)
+        )
         self.log.debug(f"Attempting LDAP search using search_filter '{auth_user_search_filter}'.")
         conn.search(
             search_base=self.user_search_base,
@@ -762,15 +769,19 @@ class LDAPAuthenticator(Authenticator):
             paged_size=2,
         )
 
+        # keep only actual entries; Active Directory returns searchResRef
+        # referral entries in the response that must not be counted as matches
+        results = [r for r in (conn.response or []) if r.get("type") == "searchResEntry"]
+
         # exactly one user entry must match
-        if not conn.response or len(conn.response) > 1:
+        if len(results) != 1:
             self.log.error(
-                f"LDAP search '{auth_user_search_filter}' returned {len(conn.response)} "
+                f"LDAP search '{auth_user_search_filter}' returned {len(results)} "
                 f"results. Please narrow search to 1 result."
             )
             return None
 
-        search_response = conn.response[0]
+        search_response = results[0]
         auth_user_dn = search_response.get("dn")
         if not auth_user_dn or not auth_user_dn.strip():
             self.log.error(

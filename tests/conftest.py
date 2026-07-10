@@ -16,13 +16,23 @@ from ldapauthenticator import LDAPAuthenticator
 class FakeDirectory:
     """A tiny in-memory directory used to drive FakeConnection responses."""
 
-    def __init__(self, users=None, nested=None, user_search_base=None, group_search_base=None):
+    def __init__(
+        self,
+        users=None,
+        nested=None,
+        user_search_base=None,
+        group_search_base=None,
+        referrals=0,
+    ):
         # users: {username: {"dn": str, "password": str, "attributes": {..}}}
         self.users = users or {}
         # nested: {group_dn: [child_group_dn, ...]}
         self.nested = nested or {}
         self.user_search_base = user_search_base
         self.group_search_base = group_search_base
+        # number of Active Directory searchResRef referral entries to include
+        # alongside real results in user searches
+        self.referrals = referrals
 
     def check_password(self, dn, password):
         entry = self._entry_by_dn(dn)
@@ -41,6 +51,13 @@ class FakeDirectory:
             return {}
         return {key: attributes.get(key, []) for key in requested}
 
+    @staticmethod
+    def _referrals(count):
+        # ldap3 represents AD referral entries as dicts with a searchResRef type
+        return [
+            {"type": "searchResRef", "uri": [f"ldap://ref{i}.example.org"]} for i in range(count)
+        ]
+
     def search(self, search_base, search_filter, search_scope, attributes):
         # BASE scope: read a single entry directly by its dn
         if search_scope == ldap3.BASE:
@@ -49,6 +66,7 @@ class FakeDirectory:
                 return []
             return [
                 {
+                    "type": "searchResEntry",
                     "dn": entry["dn"],
                     "attributes": self._project(entry.get("attributes", {}), attributes),
                 }
@@ -58,16 +76,18 @@ class FakeDirectory:
             children = []
             for group_dn, kids in self.nested.items():
                 if group_dn in (search_filter or ""):
-                    children.extend({"dn": kid} for kid in kids)
+                    children.extend({"type": "searchResEntry", "dn": kid} for kid in kids)
             return children
         # user search (SUBTREE): match the entry whose username is in the filter
         for username, user in self.users.items():
             if username in (search_filter or ""):
                 return [
                     {
+                        "type": "searchResEntry",
                         "dn": user["dn"],
                         "attributes": self._project(user.get("attributes", {}), attributes),
-                    }
+                    },
+                    *self._referrals(self.referrals),
                 ]
         return []
 

@@ -17,7 +17,7 @@ def run(coro):
     return asyncio.run(coro)
 
 
-def alice_directory(groups=None, extra_attributes=None, nested=None):
+def alice_directory(groups=None, extra_attributes=None, nested=None, referrals=0):
     attributes = {"memberOf": groups or []}
     if extra_attributes:
         attributes.update(extra_attributes)
@@ -32,6 +32,7 @@ def alice_directory(groups=None, extra_attributes=None, nested=None):
         nested=nested,
         user_search_base=USER_BASE,
         group_search_base=GROUP_BASE,
+        referrals=referrals,
     )
 
 
@@ -70,6 +71,45 @@ def test_search_bind_requires_service_account(make_authenticator):
     )
     # no bind_user_dn configured and no bind_dn_template -> cannot proceed
     assert run(auth.authenticate(None, {"username": "alice", "password": "secret"})) is None
+
+
+def test_search_bind_ignores_ad_referrals(make_authenticator):
+    # regression for AD: searchResRef referral entries in the response must not
+    # be counted as extra matches (issue #8 / PR #20)
+    auth = make_authenticator(
+        alice_directory(referrals=2),
+        bind_user_dn="cn=svc,dc=example,dc=org",
+        bind_user_password="svcpass",
+        user_search_base=USER_BASE,
+        user_search_filter="(uid={username})",
+    )
+    assert run(auth.authenticate(None, {"username": "alice", "password": "secret"})) == "alice"
+
+
+def test_search_bind_escapes_filter_injection(make_authenticator):
+    # a username with LDAP filter metacharacters must be escaped, not injected
+    # into the search filter verbatim
+    captured = {}
+    directory = alice_directory()
+    orig_search = directory.search
+
+    def spy(search_base, search_filter, search_scope, attributes):
+        captured["filter"] = search_filter
+        return orig_search(search_base, search_filter, search_scope, attributes)
+
+    directory.search = spy
+    auth = make_authenticator(
+        directory,
+        bind_user_dn="cn=svc,dc=example,dc=org",
+        bind_user_password="svcpass",
+        user_search_base=USER_BASE,
+        user_search_filter="(uid={username})",
+    )
+    run(auth.authenticate(None, {"username": "alice)(uid=*", "password": "secret"}))
+    # the raw injection payload must not appear unescaped in the filter, and its
+    # metacharacters must be present in escaped form
+    assert ")(uid=*" not in captured["filter"]
+    assert "\\28uid=\\2a" in captured["filter"]
 
 
 def test_group_allowed(make_authenticator):
