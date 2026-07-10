@@ -1,6 +1,7 @@
 # Proposal: SASL / Kerberos bind support
 
 **Status:** Proposed (not yet implemented)
+**Tracking issue:** [#24](https://github.com/hansohn/jupyterhub-ldap-authenticator/issues/24)
 **Scope owner:** TBD
 
 ## Motivation
