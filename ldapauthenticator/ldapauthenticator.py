@@ -379,7 +379,7 @@ class LDAPAuthenticator(Authenticator):
             home_dir_cmd = ["mkhomedir_helper"]
         else:
             self.log.debug(f"Not sure how to create a home directory on '{sys.platform}' system")
-            home_dir_cmd = list()
+            home_dir_cmd = []
         return home_dir_cmd
 
     async def add_user(self, user: User) -> None:
@@ -416,7 +416,7 @@ class LDAPAuthenticator(Authenticator):
             stderr=subprocess.PIPE,
             universal_newlines=True,
         )
-        out, err = proc.communicate()
+        _, err = proc.communicate()
         if proc.returncode:
             raise RuntimeError(f"Failed to create '{username}' user home directory: {err}")
 
@@ -550,7 +550,7 @@ class LDAPAuthenticator(Authenticator):
         if group in _visited:
             return []
         _visited.add(group)
-        nested_groups = list()
+        nested_groups = []
         conn.search(
             search_base=self.group_search_base,
             search_filter=self.group_search_filter.format(group=group),
@@ -686,8 +686,10 @@ class LDAPAuthenticator(Authenticator):
             # read membership + auth_state attributes from the user's own entry in
             # a single BASE search (the direct-bind strategy has no prior search
             # response to draw from)
-            wanted = self._search_attributes()
-            user_attributes = self._read_user_attributes(conn, auth_user_dn, wanted) or {}
+            wanted_attributes = self._search_attributes()
+            user_attributes = (
+                self._read_user_attributes(conn, auth_user_dn, wanted_attributes) or {}
+            )
 
             # optional group membership enforcement
             if self.allowed_groups and not self._user_allowed(
