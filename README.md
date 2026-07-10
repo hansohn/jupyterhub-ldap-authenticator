@@ -28,6 +28,8 @@
   - [User and group parameters](#user-and-group-parameters)
   - [Home directory and auth state parameters](#home-directory-and-auth-state-parameters)
 - [Examples](#examples)
+- [Directory compatibility](#directory-compatibility)
+- [Multi-factor authentication](#multi-factor-authentication)
 - [Migrating from 0.x](#migrating-from-0x)
 - [Development](#development)
 - [License](#license)
@@ -215,6 +217,49 @@ c.LDAPAuthenticator.username_pattern = '[a-zA-Z0-9_.][a-zA-Z0-9_.-]{0,252}[a-zA-
 c.LDAPAuthenticator.create_user_home_dir = True
 c.LDAPAuthenticator.create_user_home_dir_cmd = ['mkhomedir_helper']
 ```
+
+### Directory compatibility
+
+This authenticator uses an LDAP **simple bind** (username/DN + password) over an
+optionally TLS-secured connection, and resolves groups from a `memberOf`-style
+attribute. Any directory that supports those works. It does **not** implement
+SASL, Kerberos/GSSAPI, NTLM, or client-certificate (EXTERNAL) bind mechanisms.
+
+| Directory | Supported | Notes |
+| --- | --- | --- |
+| **Active Directory** | ✅ | Use a `sAMAccountName` search filter; `memberOf` is native. Modern/hardened AD often rejects cleartext simple bind — use `server_tls_strategy='before_bind'` or `'on_connect'`. |
+| **FreeIPA / 389 Directory Server** | ✅ | `memberOf` is native. Supports OTP (see below). |
+| **OpenLDAP** | ✅ | Requires the [`memberof` overlay](https://www.openldap.org/doc/admin24/overlays.html) for `allowed_groups`/nested groups; without it, authentication still works but group scoping does not. |
+| **JumpCloud LDAP-as-a-Service** | ✅ | Standard simple bind + `memberOf`. |
+| **Okta (LDAP Interface)** | ⚠️ | Works via Okta's LDAP Interface over LDAPS with Okta-specific base DNs. For native Okta, an OIDC authenticator is usually the better fit. |
+| **Google Workspace (Secure LDAP)** | ⚠️ | Requires mutual TLS (client certificate) configured via `server_tls_kwargs` (`local_certificate_file` / `local_private_key_file`). |
+| **Azure AD / Entra ID (native)** | ❌ | Does not speak LDAP. **Azure AD DS** (Domain Services) does and behaves like Active Directory. |
+
+Rule of thumb: if the directory accepts an LDAP **simple bind over TLS** and
+exposes a **`memberOf`-like attribute**, it is compatible. Kerberos-only realms
+and proprietary APIs are not.
+
+### Multi-factor authentication
+
+This plugin does not implement MFA as a first-class feature — there is no
+separate OTP field, challenge-response step, or push handling (JupyterHub's login
+form is a single username/password step).
+
+However, because the password field is passed through to the LDAP bind unchanged,
+**"append your one-time code to your password" MFA works transparently** with any
+directory that validates the appended code at bind time:
+
+| MFA style | Works | How |
+| --- | --- | --- |
+| Password + OTP concatenation | ✅ | User enters `password123456`; the directory validates the trailing code during bind |
+| FreeIPA OTP | ✅ | FreeIPA's documented `password+OTP` bind model |
+| Okta LDAP Interface MFA | ✅ | Append a TOTP code, or literally append `push` for Okta Verify push |
+| RADIUS-fronted LDAP | ✅ | Same concatenation model |
+| Interactive challenge-response | ❌ | Would require a second login prompt |
+| Push-only with nothing appended | ❌ | Unless the directory triggers/blocks on the push during the bind |
+
+In other words, MFA is a property of the directory that this plugin's
+pass-through bind preserves, rather than something the plugin performs itself.
 
 ### Migrating from 0.x
 
