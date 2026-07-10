@@ -160,6 +160,21 @@ c.LDAPAuthenticator.create_user_home_dir = True
 c.LDAPAuthenticator.auth_state_attributes = ['mail', 'displayName']
 ```
 
+> **Home-directory command.** The default `mkhomedir_helper` only creates a home
+> directory for a user that already resolves as a local POSIX account (e.g. via
+> SSSD/nslcd). In pure-LDAP deployments where users are **not** local system
+> accounts, `mkhomedir_helper` fails and login returns a 500. In that case, use a
+> command that also creates the account, for example:
+>
+> ```python
+> # create the system user and its home directory
+> c.LDAPAuthenticator.create_user_home_dir_cmd = ['useradd', '--create-home']
+> ```
+>
+> The username is appended as the final argument. The command runs as the user
+> the JupyterHub process runs as, so it must have permission to create accounts
+> (typically root).
+
 ### Examples
 
 #### FreeIPA Integration
