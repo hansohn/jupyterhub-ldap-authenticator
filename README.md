@@ -233,7 +233,7 @@ SASL, Kerberos/GSSAPI, NTLM, or client-certificate (EXTERNAL) bind mechanisms.
 | **JumpCloud LDAP-as-a-Service** | ✅ | Standard simple bind + `memberOf`. |
 | **Okta (LDAP Interface)** | ⚠️ | Works via Okta's LDAP Interface over LDAPS with Okta-specific base DNs. For native Okta, an OIDC authenticator is usually the better fit. |
 | **Google Workspace (Secure LDAP)** | ⚠️ | Requires mutual TLS (client certificate) configured via `server_tls_kwargs` (`local_certificate_file` / `local_private_key_file`). |
-| **Azure AD / Entra ID (native)** | ❌ | Does not speak LDAP. **Azure AD DS** (Domain Services) does and behaves like Active Directory. |
+| **Azure AD / Entra ID (native)** | ❌ | Cloud-only Entra ID exposes no LDAP endpoint at all — it speaks OIDC/SAML, so use an OAuth/OIDC authenticator ([`oauthenticator`](https://github.com/jupyterhub/oauthenticator)) instead. To use LDAP against an Entra tenant, add **Entra Domain Services** (Azure AD DS), a managed AD-compatible service that _does_ speak LDAP — then the Active Directory row applies. |
 
 Rule of thumb: if the directory accepts an LDAP **simple bind over TLS** and
 exposes a **`memberOf`-like attribute**, it is compatible. Kerberos-only realms
