@@ -1,0 +1,9 @@
+build
+mypy
+pytest
+pytest-cov
+ruff
+setuptools
+setuptools_scm
+tox
+twine

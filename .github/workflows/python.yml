@@ -1,0 +1,92 @@
+---
+name: Python Pipeline
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - '*'
+    tags:
+      - 'v?[0-9]+.[0-9]+.[0-9]+'
+  pull_request:
+    types:
+      - opened
+      - reopened
+      - synchronize
+
+env:
+  PYTHON_VERSION: 3.12
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Log Git Reference Info
+        run: |
+          cat << EOF
+          GITHUB_EVENT_NAME:    ${GITHUB_EVENT_NAME}
+          GITHUB_REF:           ${GITHUB_REF}
+          GITHUB_REF_TYPE:      ${GITHUB_REF_TYPE}
+          GITHUB_REF_NAME:      ${GITHUB_REF_NAME}
+          EOF
+      - name: Set up Python
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y software-properties-common jq make
+          sudo add-apt-repository ppa:deadsnakes/ppa
+          sudo apt-get install --no-install-recommends -y python${PYTHON_VERSION} python${PYTHON_VERSION}-venv python3-pip
+      - name: Install dependencies
+        run: make venv
+      - name: Lint everything
+        run: make lint
+      - name: Test everything
+        run: make test
+      - name: Build package
+        run: make build
+
+  deploy:
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    needs:
+      - build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Set up Python
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y software-properties-common jq make
+          sudo add-apt-repository ppa:deadsnakes/ppa
+          sudo apt-get install --no-install-recommends -y python${PYTHON_VERSION} python${PYTHON_VERSION}-venv python3-pip
+      - name: Install dependencies
+        run: make venv
+      - name: Build package
+        run: make build
+      - name: Publish package
+        run: make upload/pypi
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+
+  slack:
+    if: always()
+    needs:
+      - build
+      - deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Slack Notification
+        uses: Gamesight/slack-workflow-status@master
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          slack_webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+          channel: ${{ secrets.SLACK_CHANNEL_ID }}
+          name: ${{ secrets.SLACK_USERNAME }}
+          icon_url: "https://cdn-icons-png.flaticon.com/512/25/25231.png"

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # MIT License
 #
 # Copyright (c) 2018 Ryan Hansohn
@@ -28,16 +27,38 @@ LDAP Authenticator plugin for JupyterHub
 import os
 import pwd
 import re
+import ssl
 import subprocess
 import sys
 import typing
+
+import ldap3
+import ldap3.core.exceptions
 from jupyterhub.auth import Authenticator
 from jupyterhub.orm import User
 from jupyterhub.traitlets import Command
-import ldap3
-import ldap3.core.exceptions
-from tornado import gen, web
-from traitlets import Any, Int, Bool, List, Unicode, Union, default, observe
+from jupyterhub.utils import maybe_future
+from ldap3.utils.conv import escape_filter_chars
+from ldap3.utils.dn import escape_rdn
+from traitlets import Any, Bool, Dict, Enum, Int, List, Unicode, Union, default, observe
+
+# Host format patterns, compiled once at import (used by validate_host).
+_IP_ADDRESS_RE = re.compile(
+    r"^(?:(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\.){3}"
+    r"(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])$"
+)
+# Matches FQDNs (ldap.example.com) as well as single-label hostnames such as
+# 'localhost' or container/service names (e.g. 'openldap' in Docker/Kubernetes).
+_HOSTNAME_RE = re.compile(
+    r"^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)*"
+    r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+)
+_URL_RE = re.compile(
+    r"^(ldaps?)://"
+    r"((?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)*"
+    r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?):"
+    r"([0-9]{1,5})$"
+)
 
 
 class LDAPAuthenticator(Authenticator):
@@ -51,7 +72,7 @@ class LDAPAuthenticator(Authenticator):
         help="""
         List of Names, IPs, or the complete URLs in the scheme://host:port
         format of the server (required).
-        """
+        """,
     )
 
     server_port = Int(
@@ -61,16 +82,63 @@ class LDAPAuthenticator(Authenticator):
         help="""
         The port where the LDAP server is listening. Typically 389, for a
         cleartext connection, and 636 for a secured connection (defaults to None).
-        """
+        """,
     )
 
     server_use_ssl = Bool(
         default_value=False,
         config=True,
         help="""
-        Boolean specifying if the connection is on a secure port (defaults to False).
-        """
+        Deprecated since 1.0. Boolean specifying if the connection is on a
+        secure port. Setting `server_use_ssl=True` is equivalent to configuring
+        `server_tls_strategy='on_connect'`. Use `server_tls_strategy` instead
+        (defaults to False).
+        """,
     )
+
+    server_tls_strategy = Enum(
+        ["before_bind", "on_connect", "insecure"],
+        default_value="before_bind",
+        config=True,
+        help="""
+        Strategy used to establish a SSL/TLS connection to the LDAP server
+        (defaults to 'before_bind').
+
+        before_bind: Upgrade the connection to SSL/TLS before binding (sending
+            credentials). This is the modern, recommended strategy (STARTTLS).
+        on_connect: Establish a SSL/TLS connection directly on connect. This is
+            the legacy LDAPS behavior, typically associated with port 636. When
+            configured, the default `server_port` becomes 636.
+        insecure: Do not use SSL/TLS. Credentials are sent in cleartext; only
+            appropriate for trusted networks or testing.
+        """,
+    )
+
+    server_tls_kwargs = Dict(
+        config=True,
+        help="""
+        Dictionary of keyword arguments passed to the constructor of the ldap3
+        package's `Tls` object, influencing encrypted connections to the LDAP
+        server. Ignored when `server_tls_strategy='insecure'`. For example::
+
+            c.LDAPAuthenticator.server_tls_kwargs = {
+                'ca_certs_file': '/path/to/ca-bundle.pem',
+            }
+
+        See https://ldap3.readthedocs.io/en/latest/ssltls.html for details.
+        """,
+    )
+
+    @observe("server_use_ssl")
+    def _server_use_ssl_changed(self, change: dict) -> None:
+        if change["new"]:
+            self.log.warning(
+                "LDAPAuthenticator.server_use_ssl is deprecated since 1.0 in "
+                "favor of LDAPAuthenticator.server_tls_strategy. Instead of "
+                "configuring server_use_ssl=True, configure "
+                "server_tls_strategy='on_connect' from now on."
+            )
+            self.server_tls_strategy = "on_connect"
 
     server_connect_timeout = Int(
         allow_none=True,
@@ -79,7 +147,7 @@ class LDAPAuthenticator(Authenticator):
         help="""
         Timeout in seconds permitted when establishing an ldap connection before
         raising an exception (defaults to None).
-        """
+        """,
     )
 
     server_receive_timeout = Int(
@@ -89,11 +157,25 @@ class LDAPAuthenticator(Authenticator):
         help="""
         Timeout in seconds permitted for responses from established ldap
         connections before raising an exception (defaults to None).
-        """
+        """,
+    )
+
+    server_auto_referrals = Bool(
+        default_value=False,
+        config=True,
+        help="""
+        Whether ldap3 should automatically follow referrals returned by the
+        server. Disabled by default: when enabled, ldap3 re-sends the bind
+        credentials to the referred server, which can leak credentials to a
+        server chosen by the directory (e.g. a rogue or compromised domain
+        controller). Only enable this if you specifically require cross-server
+        referral chasing and trust every server that may be referred
+        (defaults to False).
+        """,
     )
 
     server_pool_strategy = Unicode(
-        default_value='FIRST',
+        default_value="FIRST",
         config=True,
         help="""
         Available Pool HA strategies (defaults to 'FIRST').
@@ -106,7 +188,7 @@ class LDAPAuthenticator(Authenticator):
         RANDOM: each time the connection is open a random server is chosen in the
             pool. If 'server_pool_active' is set to True unavailable servers
             will be discarded.
-        """
+        """,
     )
 
     server_pool_active = Union(
@@ -117,7 +199,7 @@ class LDAPAuthenticator(Authenticator):
         If True the ServerPool strategy will check for server availability. Set
         to Integer for maximum number of cycles to try before giving up
         (defaults to True).
-        """
+        """,
     )
 
     server_pool_exhaust = Union(
@@ -129,7 +211,7 @@ class LDAPAuthenticator(Authenticator):
         an Integer, this will be the number of seconds an unreachable server is
         considered offline. When this timeout expires the server is reinserted
         in the pool and checked again for availability (defaults to False).
-        """
+        """,
     )
 
     bind_user_dn = Unicode(
@@ -138,7 +220,7 @@ class LDAPAuthenticator(Authenticator):
         config=True,
         help="""
         The account of the user to log in for simple bind (defaults to None).
-        """
+        """,
     )
 
     bind_user_password = Unicode(
@@ -147,7 +229,32 @@ class LDAPAuthenticator(Authenticator):
         config=True,
         help="""
         The password of the user for simple bind (defaults to None)
-        """
+        """,
+    )
+
+    bind_dn_template = Union(
+        [List(), Unicode()],
+        allow_none=True,
+        default_value=None,
+        config=True,
+        help="""
+        Template(s) from which to construct the full DN used to bind directly to
+        the LDAP server as the authenticating user, bypassing the service-account
+        search (`bind_user_dn`). '{username}' is replaced with the authenticating
+        username. When set, authentication uses the direct-bind strategy instead
+        of the search-bind strategy (defaults to None).
+
+        String example::
+
+            uid={username},ou=people,dc=example,dc=org
+
+        List example (each template is tried in order until one binds)::
+
+            [
+                'uid={username},ou=people,dc=example,dc=org',
+                'uid={username},ou=developers,dc=example,dc=org',
+            ]
+        """,
     )
 
     user_search_base = Unicode(
@@ -155,7 +262,7 @@ class LDAPAuthenticator(Authenticator):
         help="""
         The location in the Directory Information Tree where the user search
         will start.
-        """
+        """,
     )
 
     user_search_filter = Unicode(
@@ -164,16 +271,16 @@ class LDAPAuthenticator(Authenticator):
         LDAP search filter to validate that the authenticating user exists
         within the organization. Search filters containing '{username}' will
         have that value substituted with the username of the authenticating user.
-        """
+        """,
     )
 
     user_membership_attribute = Unicode(
-        default_value='memberOf',
+        default_value="memberOf",
         config=True,
         help="""
         LDAP Attribute used to associate user group membership
         (defaults to 'memberOf').
-        """
+        """,
     )
 
     group_search_base = Unicode(
@@ -182,7 +289,7 @@ class LDAPAuthenticator(Authenticator):
         The location in the Directory Information Tree where the group search
         will start. Search string containing '{group}' will be substituted
         with entries taken from allow_nested_groups.
-        """
+        """,
     )
 
     group_search_filter = Unicode(
@@ -192,7 +299,7 @@ class LDAPAuthenticator(Authenticator):
         allowed_groups parameter. Search filters containing '{group}' will
         have that value substituted with the group dns provided in the
         allowed_groups parameter.
-        """
+        """,
     )
 
     allowed_groups = Union(
@@ -203,7 +310,7 @@ class LDAPAuthenticator(Authenticator):
         help="""
         List of LDAP group DNs that users must be a member of in order to be granted
         login.
-        """
+        """,
     )
 
     allow_nested_groups = Bool(
@@ -212,7 +319,19 @@ class LDAPAuthenticator(Authenticator):
         help="""
         Boolean allowing for recursive search of members within nested groups of
         allowed_groups (defaults to False).
-        """
+        """,
+    )
+
+    auth_state_attributes = List(
+        Unicode(),
+        config=True,
+        help="""
+        List of LDAP attributes to fetch for the authenticating user and expose
+        to JupyterHub as `auth_state`. When set, `authenticate()` returns a dict
+        containing the username and an `auth_state` mapping of the requested
+        attributes. Requires `Authenticator.enable_auth_state=True` to be stored
+        (defaults to an empty list).
+        """,
     )
 
     username_pattern = Unicode(
@@ -221,7 +340,7 @@ class LDAPAuthenticator(Authenticator):
         Regular expression pattern that a valid username must match. If a
         username does not match the pattern specified here, authentication will
         not be attempted. If not set, allow any username (defaults to None).
-        """
+        """,
     )
 
     username_regex = Any(
@@ -230,11 +349,11 @@ class LDAPAuthenticator(Authenticator):
         """
     )
 
-    @observe('username_pattern')
+    @observe("username_pattern")
     def _username_pattern_changed(self, change: dict) -> None:
-        if not change['new']:
+        if not change["new"]:
             self.username_regex = None
-        self.username_regex = re.compile(change['new'])
+        self.username_regex = re.compile(change["new"])
 
     create_user_home_dir = Bool(
         default_value=False,
@@ -242,7 +361,7 @@ class LDAPAuthenticator(Authenticator):
         help="""
         If set to True, will attempt to create a user's home directory
         locally if that directory does not exist already.
-        """
+        """,
     )
 
     create_user_home_dir_cmd = Command(
@@ -250,27 +369,26 @@ class LDAPAuthenticator(Authenticator):
         help="""
         Command to create a users home directory.
         The command should be formatted as a list of strings.
-        """
+        """,
     )
 
-    @default('create_user_home_dir_cmd')
-    def _default_create_user_home_dir_cmd(self) -> typing.List[str]:
-        if sys.platform == 'linux':
-            home_dir_cmd = ['mkhomedir_helper']
+    @default("create_user_home_dir_cmd")
+    def _default_create_user_home_dir_cmd(self) -> list[str]:
+        home_dir_cmd: list[str]
+        if sys.platform == "linux":
+            home_dir_cmd = ["mkhomedir_helper"]
         else:
-            self.log.debug("Not sure how to create a home directory on '{}' system".format(
-                sys.platform))
-            home_dir_cmd = list()
+            self.log.debug(f"Not sure how to create a home directory on '{sys.platform}' system")
+            home_dir_cmd = []
         return home_dir_cmd
 
-    @gen.coroutine
-    def add_user(self, user: User) -> typing.Generator:
+    async def add_user(self, user: User) -> None:
         if self.create_user_home_dir:
             username = user.name
-            user_exists = yield gen.maybe_future(self.user_home_dir_exists(username))
+            user_exists = await maybe_future(self.user_home_dir_exists(username))
             if not user_exists:
-                yield gen.maybe_future(self.add_user_home_dir(username))
-        yield gen.maybe_future(super().add_user(user))
+                self.add_user_home_dir(username)
+        await maybe_future(super().add_user(user))
 
     def user_home_dir_exists(self, username: str) -> bool:
         """
@@ -288,23 +406,26 @@ class LDAPAuthenticator(Authenticator):
         Creates user home directory
         """
         cmd = self.create_user_home_dir_cmd + [username]
-        self.log.info("Creating '{}' user home directory using command '{}'".format(
-            username, ' '.join(cmd)))
-        proc = subprocess.Popen(cmd,
-                                stdout=subprocess.PIPE,
-                                stderr=subprocess.PIPE,
-                                universal_newlines=True)
-        out, err = proc.communicate()
+        self.log.info(
+            "Creating '{}' user home directory using command '{}'".format(username, " ".join(cmd))
+        )
+        # cmd is assembled from the admin-configured create_user_home_dir_cmd trait
+        proc = subprocess.Popen(  # noqa: S603
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            universal_newlines=True,
+        )
+        _, err = proc.communicate()
         if proc.returncode:
-            raise RuntimeError("Failed to create '{}' user home directory: {}".format(
-                username, err))
+            raise RuntimeError(f"Failed to create '{username}' user home directory: {err}")
 
     def validate_username(self, username: str) -> bool:
         """
         Validate a username
         Return True if username is valid, False otherwise.
         """
-        if '/' in username:
+        if "/" in username:
             # / is not allowed in usernames
             return False
         if not username:
@@ -319,34 +440,27 @@ class LDAPAuthenticator(Authenticator):
         Validate hostname
         Return True if host is valid, False otherwise.
         """
-        ip_address_regex = re.compile(r'^(?:(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\.){3}'
-                                      r'(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])$')
-        hostname_regex = re.compile(r'^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+'
-                                    r'[a-z0-9][a-z0-9-]{0,61}[a-z0-9]$')
-        url_regex = re.compile(r'^(ldaps?)://'
-                               r'((?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+'
-                               r'[a-z0-9][a-z0-9-]{0,61}[a-z0-9]):'
-                               r'([0-9]{1,5})$')
-        if bool(ip_address_regex.match(host)):
+        url_match = _URL_RE.match(host)
+        if _IP_ADDRESS_RE.match(host):
             # using ipv4 address
             valid = True
-        elif bool(hostname_regex.match(host)):
+        elif _HOSTNAME_RE.match(host):
             # using a hostname address
             valid = True
-        elif bool(url_regex.match(host)):
+        elif url_match:
             # using host url address
-            match = url_regex.match(host)
-            proto = match.group(1)
-            if proto == 'ldaps':
-                self.server_use_ssl = True
+            proto = url_match.group(1)
+            if proto == "ldaps":
+                self.server_tls_strategy = "on_connect"
             valid = True
         else:
             # unsupported host format
             valid = False
         return valid
 
-    def create_ldap_server_pool_obj(self,
-                                    ldap_servers: typing.List[str] = None) -> ldap3.ServerPool:
+    def create_ldap_server_pool_obj(
+        self, ldap_servers: list[str] | None = None
+    ) -> ldap3.ServerPool:
         """
         Create ldap3 ServerPool Object
         """
@@ -354,63 +468,101 @@ class LDAPAuthenticator(Authenticator):
             ldap_servers,
             pool_strategy=self.server_pool_strategy.upper(),
             active=self.server_pool_active,
-            exhaust=self.server_pool_exhaust
+            exhaust=self.server_pool_exhaust,
         )
         return server_pool
+
+    def _warn_insecure_tls(self) -> None:
+        """
+        Emit a one-time warning when TLS is used without server certificate
+        validation (encrypted but unauthenticated, i.e. MITM-vulnerable).
+        """
+        if getattr(self, "_insecure_tls_warned", False):
+            return
+        self._insecure_tls_warned = True
+        self.log.warning(
+            "LDAPAuthenticator is using TLS (server_tls_strategy=%r) without "
+            "server certificate validation (ldap3 Tls validate=CERT_NONE). The "
+            "connection is encrypted but the server identity is NOT verified, "
+            "leaving credentials vulnerable to man-in-the-middle attacks. "
+            "Configure server_tls_kwargs with validate=ssl.CERT_REQUIRED and a "
+            "ca_certs_file (or ca_certs_path).",
+            self.server_tls_strategy,
+        )
 
     def create_ldap_server_obj(self, host: str) -> ldap3.Server:
         """
         Create ldap3 Server Object
         """
+        tls = None
+        if self.server_tls_strategy != "insecure":
+            tls = ldap3.Tls(**self.server_tls_kwargs)
+            if self.server_tls_kwargs.get("validate", ssl.CERT_NONE) == ssl.CERT_NONE:
+                self._warn_insecure_tls()
         server = ldap3.Server(
             host,
             port=self.server_port,
-            use_ssl=self.server_use_ssl,
-            connect_timeout=self.server_connect_timeout
+            use_ssl=(self.server_tls_strategy == "on_connect"),
+            tls=tls,
+            connect_timeout=self.server_connect_timeout,
         )
         return server
 
-    def ldap_connection(self,
-                        server_pool: ldap3.ServerPool,
-                        username: str,
-                        password: str) -> ldap3.Connection:
+    def ldap_connection(
+        self, server_pool: ldap3.ServerPool, username: str, password: str
+    ) -> ldap3.Connection:
         """
         Create ldap(s) Connection Object
         """
+        # select auto_bind behavior based on the configured TLS strategy;
+        # 'before_bind' upgrades the connection with STARTTLS prior to binding
+        if self.server_tls_strategy == "before_bind":
+            auto_bind = ldap3.AUTO_BIND_TLS_BEFORE_BIND
+        else:
+            auto_bind = ldap3.AUTO_BIND_NO_TLS
         # attempt connection
         try:
             conn = ldap3.Connection(
                 server_pool,
                 user=username,
                 password=password,
-                auto_bind=ldap3.AUTO_BIND_NO_TLS,
+                auto_bind=auto_bind,
+                auto_referrals=self.server_auto_referrals,
                 read_only=True,
-                receive_timeout=self.server_receive_timeout)
+                receive_timeout=self.server_receive_timeout,
+            )
         except ldap3.core.exceptions.LDAPBindError as exc:
             msg = "\n{exc_type}: {exc_msg}".format(
-                exc_type=exc.__class__.__name__,
-                exc_msg=exc.args[0] if exc.args else '')
-            self.log.error("Failed to connect to ldap: {}".format(msg))
+                exc_type=exc.__class__.__name__, exc_msg=exc.args[0] if exc.args else ""
+            )
+            self.log.error(f"Failed to connect to ldap: {msg}")
             conn = None
         return conn
 
-    def get_nested_groups(self, conn, group: str) -> typing.List[str]:
+    def get_nested_groups(self, conn, group: str, _visited=None) -> list[str]:
         """
-        Recursively search group for nested memberships
+        Recursively search group for nested memberships. `_visited` tracks the
+        groups already expanded so that cyclic group nesting (legal in Active
+        Directory) does not cause infinite recursion.
         """
-        nested_groups = list()
+        if _visited is None:
+            _visited = set()
+        if group in _visited:
+            return []
+        _visited.add(group)
+        nested_groups = []
         conn.search(
             search_base=self.group_search_base,
             search_filter=self.group_search_filter.format(group=group),
-            search_scope=ldap3.SUBTREE)
+            search_scope=ldap3.SUBTREE,
+        )
         if conn.response:
             for nested_group in conn.response:
-                if 'dn' in nested_group:
-                    nested_groups.extend([nested_group['dn']])
-                    groups = self.get_nested_groups(conn, nested_group['dn'])
-                    nested_groups.extend(groups)
-        nested_groups = list(set(nested_groups))
-        return nested_groups
+                dn = nested_group.get("dn")
+                if dn:
+                    nested_groups.append(dn)
+                    nested_groups.extend(self.get_nested_groups(conn, dn, _visited))
+        return list(set(nested_groups))
 
     def test_auth(self, conn: ldap3.Connection, auth_user_dn: str, password: str) -> bool:
         """
@@ -426,54 +578,200 @@ class LDAPAuthenticator(Authenticator):
             conn.unbind()
         return auth_bound
 
-    @gen.coroutine
-    def authenticate(self, handler: web.RequestHandler, data: dict) -> typing.Optional[str]:
+    def _search_attributes(self) -> list[str]:
+        """
+        Compile the list of LDAP attributes to request during the user search:
+        the group-membership attribute (when enforcing allowed_groups) plus any
+        configured auth_state_attributes.
+        """
+        attributes = set()
+        if self.allowed_groups:
+            attributes.add(self.user_membership_attribute)
+        attributes.update(self.auth_state_attributes)
+        return list(attributes)
 
-        # define vars
-        username = data['username']
-        password = data['password']
-        server_pool = self.create_ldap_server_pool_obj()
-        conn_servers = list()
+    def _build_auth_response(self, username: str, attributes: dict | None) -> str | dict:
+        """
+        Build the authenticate() return value, attaching an auth_state mapping of
+        the configured auth_state_attributes when requested.
+        """
+        if not self.auth_state_attributes:
+            return username
+        attributes = attributes or {}
+        auth_state = {attr: attributes.get(attr) for attr in self.auth_state_attributes}
+        return {"name": username, "auth_state": auth_state}
+
+    def _read_user_attributes(
+        self, conn: ldap3.Connection, auth_user_dn: str, attributes: list[str]
+    ) -> dict | None:
+        """
+        Read attributes directly from the authenticating user's own LDAP entry
+        (BASE scope). Used by the direct-bind strategy, which has no search
+        response to draw from.
+        """
+        conn.search(
+            search_base=auth_user_dn,
+            search_filter="(objectClass=*)",
+            search_scope=ldap3.BASE,
+            attributes=list(attributes),
+        )
+        if conn.response and "attributes" in conn.response[0]:
+            return conn.response[0]["attributes"]
+        return None
+
+    def _user_allowed(
+        self,
+        conn: ldap3.Connection,
+        username: str,
+        user_groups: list[str] | None,
+    ) -> bool:
+        """
+        Return True if the user's groups intersect allowed_groups (expanding
+        nested groups when enabled). Shared by both authentication strategies.
+        """
+        # normalize allowed_groups (Union of str or list) and expand nested groups
+        permitted_groups = self.allowed_groups
+        if isinstance(permitted_groups, str):
+            permitted_groups = [permitted_groups]
+        permitted_groups = list(permitted_groups)
+        if self.allow_nested_groups:
+            for group in list(permitted_groups):
+                permitted_groups.extend(self.get_nested_groups(conn, group))
+
+        allowed_memberships = list(set(user_groups or []).intersection(permitted_groups))
+        if allowed_memberships:
+            self.log.debug(
+                f"User '{username}' found in the following allowed ldap "
+                f"groups {allowed_memberships}."
+            )
+            return True
+        self.log.error(
+            f"User '{username}' is not a member of any permitted groups {permitted_groups}."
+        )
+        return False
+
+    def _authenticate_direct_bind(
+        self,
+        username: str,
+        password: str,
+        server_pool: ldap3.ServerPool,
+        conn_servers: list[str],
+    ) -> str | dict | None:
+        """
+        Authenticate using the direct-bind strategy: bind to the LDAP server as
+        the authenticating user via bind_dn_template, trying each template in
+        turn. The user's password is verified by the bind itself.
+        """
+        templates = self.bind_dn_template
+        if isinstance(templates, str):
+            templates = [templates]
+        templates = [t for t in templates if t and t.strip()]
+        if not templates:
+            self.log.error("'bind_dn_template' is set but contains no usable templates.")
+            return None
+
+        for template in templates:
+            # escape the username as a DN component to prevent DN injection
+            auth_user_dn = template.format(username=escape_rdn(username))
+            self.log.debug(f"Attempting direct bind to {conn_servers} as '{auth_user_dn}'.")
+            conn = self.ldap_connection(server_pool, auth_user_dn, password)
+            if not conn or not conn.bound:
+                self.log.debug(f"Direct bind failed for '{auth_user_dn}'.")
+                continue
+
+            self.log.info(
+                f"User '{username}' successfully authenticated against ldap server {conn_servers}."
+            )
+
+            # read membership + auth_state attributes from the user's own entry in
+            # a single BASE search (the direct-bind strategy has no prior search
+            # response to draw from)
+            wanted_attributes = self._search_attributes()
+            user_attributes = (
+                self._read_user_attributes(conn, auth_user_dn, wanted_attributes) or {}
+            )
+
+            # optional group membership enforcement
+            if self.allowed_groups and not self._user_allowed(
+                conn, username, user_attributes.get(self.user_membership_attribute)
+            ):
+                conn.unbind()
+                return None
+
+            conn.unbind()
+            attributes = user_attributes if self.auth_state_attributes else None
+            return self._build_auth_response(username, attributes)
+
+        self.log.error(
+            f"User '{username}' authentication failed against ldap "
+            f"server {conn_servers} (direct bind)."
+        )
+        return None
+
+    async def authenticate(self, handler: typing.Any, data: dict) -> str | dict | None:
+        username = data["username"].lower()
+        password = data["password"]
 
         # validate credentials
-        username = username.lower()
         if not self.validate_username(username):
-            self.log.error('Unsupported username supplied')
+            self.log.error("Unsupported username supplied")
             return None
         if not password or not password.strip():
-            self.log.error('Empty password supplied')
+            self.log.error("Empty password supplied")
             return None
 
-        # cast server_hosts to list
-        if isinstance(self.server_hosts, str):
-            self.server_hosts = self.server_hosts.split(',')
-
-        # validate hosts and populate server_pool object
-        for host in self.server_hosts:
-            host = host.strip().lower()
-            if not self.validate_host(host):
-                self.log.warning(("Host '{}' not supplied in approved format. " +
-                                  "Removing host from Server Pool").format(host))
-                break
-            server = self.create_ldap_server_obj(host)
-            server_pool.add(server)
-            conn_servers.extend([host])
-
-        # verify ldap connection object parameters are defined
+        # build the server pool from configured hosts
+        server_pool, conn_servers = self._build_server_pool()
         if not server_pool.servers:
             self.log.error(
-                "No hosts provided. ldap connection requires at least 1 host to connect to.")
+                "No hosts provided. ldap connection requires at least 1 host to connect to."
+            )
             return None
+
+        # dispatch to the configured authentication strategy
+        if self.bind_dn_template:
+            return self._authenticate_direct_bind(username, password, server_pool, conn_servers)
+        return self._authenticate_search_bind(username, password, server_pool, conn_servers)
+
+    def _build_server_pool(self) -> tuple[ldap3.ServerPool, list[str]]:
+        """
+        Build an ldap3 ServerPool from the configured server_hosts, skipping any
+        host that fails format validation (invalid hosts are dropped, not fatal).
+        """
+        server_pool = self.create_ldap_server_pool_obj()
+        conn_servers: list[str] = []
+        hosts = self.server_hosts
+        if isinstance(hosts, str):
+            hosts = hosts.split(",")
+        for raw_host in hosts:
+            host = raw_host.strip().lower()
+            if not self.validate_host(host):
+                self.log.warning(f"Host '{host}' not supplied in approved format. Skipping host.")
+                continue
+            server_pool.add(self.create_ldap_server_obj(host))
+            conn_servers.append(host)
+        return server_pool, conn_servers
+
+    def _authenticate_search_bind(
+        self,
+        username: str,
+        password: str,
+        server_pool: ldap3.ServerPool,
+        conn_servers: list[str],
+    ) -> str | dict | None:
+        """
+        Authenticate using the search-bind strategy: connect as the service
+        account, search for the authenticating user, enforce group membership,
+        then verify the user's password by rebinding as them.
+        """
         if self.bind_user_dn is None or not self.bind_user_dn.strip():
-            self.log.error(
-                "'bind_user_dn' config value undefined. required for ldap connection")
+            self.log.error("'bind_user_dn' config value undefined. required for ldap connection")
             return None
         if self.bind_user_password is None or not self.bind_user_password.strip():
             self.log.error(
-                "'bind_user_password' config value undefined. required for ldap connection")
+                "'bind_user_password' config value undefined. required for ldap connection"
+            )
             return None
-
-        # verify ldap search object parameters are defined
         if not self.user_search_base or not self.user_search_base.strip():
             self.log.error("'user_search_base' config value undefined. required for ldap search")
             return None
@@ -481,119 +779,79 @@ class LDAPAuthenticator(Authenticator):
             self.log.error("'user_search_filter' config value undefined. required for ldap search")
             return None
 
-        # open ldap connection and authenticate
-        self.log.debug("Attempting ldap connection to {} with user '{}'".format(
-            conn_servers, self.bind_user_dn))
-        conn = self.ldap_connection(
-            server_pool,
-            self.bind_user_dn,
-            self.bind_user_password)
-
-        # proceed if connection has been established
-        if not conn or not conn.bind():
-            self.log.error(("Could not establish ldap connection to {} using '{}' " +
-                            "and supplied bind_user_password.").format(
-                                conn_servers, self.bind_user_dn))
+        self.log.debug(
+            f"Attempting ldap connection to {conn_servers} with user '{self.bind_user_dn}'"
+        )
+        conn = self.ldap_connection(server_pool, self.bind_user_dn, self.bind_user_password)
+        if not conn or not conn.bound:
+            self.log.error(
+                f"Could not establish ldap connection to {conn_servers} using "
+                f"'{self.bind_user_dn}' and supplied bind_user_password."
+            )
             return None
-        else:
-            self.log.debug(
-                "Successfully established connection to {} with user '{}'".format(
-                    conn_servers, self.bind_user_dn))
 
-            # format user search filter
-            auth_user_search_filter = self.user_search_filter.format(
-                username=username)
+        self.log.debug(
+            f"Successfully established connection to {conn_servers} with user '{self.bind_user_dn}'"
+        )
+        # escape the username before interpolating it into the LDAP filter to
+        # prevent LDAP search filter injection
+        auth_user_search_filter = self.user_search_filter.format(
+            username=escape_filter_chars(username)
+        )
+        self.log.debug(f"Attempting LDAP search using search_filter '{auth_user_search_filter}'.")
+        conn.search(
+            search_base=self.user_search_base,
+            search_filter=auth_user_search_filter,
+            search_scope=ldap3.SUBTREE,
+            attributes=self._search_attributes(),
+            paged_size=2,
+        )
 
-            # search for authenticating user in ldap
-            self.log.debug("Attempting LDAP search using search_filter '{}'.".format(
-                auth_user_search_filter))
-            conn.search(
-                search_base=self.user_search_base,
-                search_filter=auth_user_search_filter,
-                search_scope=ldap3.SUBTREE,
-                attributes=self.user_membership_attribute if self.allowed_groups else list(),
-                paged_size=2)
+        # keep only actual entries; Active Directory returns searchResRef
+        # referral entries in the response that must not be counted as matches
+        results = [r for r in (conn.response or []) if r.get("type") == "searchResEntry"]
 
-            # handle abnormal search results
-            if not conn.response or len(conn.response) > 1:
-                self.log.error(("LDAP search '{}' returned {} results. " +
-                                "Please narrow search to 1 result").format(
-                                    auth_user_search_filter, len(conn.response)))
+        # exactly one user entry must match
+        if len(results) != 1:
+            self.log.error(
+                f"LDAP search '{auth_user_search_filter}' returned {len(results)} "
+                f"results. Please narrow search to 1 result."
+            )
+            return None
+
+        search_response = results[0]
+        auth_user_dn = search_response.get("dn")
+        if not auth_user_dn or not auth_user_dn.strip():
+            self.log.error(
+                f"Search results for user '{username}' returned 'dn' attribute "
+                f"with undefined or null value."
+            )
+            conn.unbind()
+            return None
+
+        # enforce group membership before verifying the password
+        if self.allowed_groups:
+            user_groups = (search_response.get("attributes") or {}).get(
+                self.user_membership_attribute
+            )
+            if not user_groups:
+                self.log.error(
+                    f"Search results for user '{username}' returned no "
+                    f"'{self.user_membership_attribute}' group membership values."
+                )
+                conn.unbind()
                 return None
-            elif self.allowed_groups and 'attributes' not in conn.response[0].keys():
-                self.log.error(("LDAP search '{}' did not return results for requested " +
-                                "search attribute(s) '{}'").format(
-                                    auth_user_search_filter, self.user_membership_attribute))
+            if not self._user_allowed(conn, username, user_groups):
+                conn.unbind()
                 return None
-            else:
-                self.log.debug("LDAP search '{}' found {} result(s).".format(
-                    auth_user_search_filter, len(conn.response)))
 
-                # copy response to var
-                search_response = conn.response[0]
-
-                # get authenticating user's ldap attributes
-                if 'dn' not in search_response or not search_response['dn'].strip():
-                    self.log.error(("Search results for user '{}' returned 'dn' attribute with " +
-                                    "undefined or null value.").format(username))
-                    conn.unbind()
-                    return None
-                else:
-                    self.log.debug(
-                        "Search results for user '{}' returned 'dn' attribute as '{}'".format(
-                            username, search_response['dn']))
-                    auth_user_dn = search_response['dn']
-
-                # is authenticating user allowed
-                if self.allowed_groups:
-                    # compile list of user groups
-                    if not search_response['attributes'][self.user_membership_attribute]:
-                        self.log.error(("Search results for user '{}' returned '{}' attribute " +
-                                        "with undefined or null value.").format(
-                                            username, self.user_membership_attribute))
-                        conn.unbind()
-                        return None
-                    else:
-                        self.log.debug(
-                            "Search results for user '{}' returned '{}' attribute as {}".format(
-                                username, self.user_membership_attribute,
-                                search_response['attributes'][self.user_membership_attribute]))
-                        user_groups = search_response['attributes'][self.user_membership_attribute]
-
-                    # compile list of permitted groups
-                    permitted_groups = list()
-                    permitted_groups.extend(self.allowed_groups)
-                    if self.allow_nested_groups:
-                        for group in self.allowed_groups:
-                            nested_groups = self.get_nested_groups(conn, group)
-                            permitted_groups.extend(nested_groups)
-
-                    # is authenticating user a member of permitted_groups
-                    allowed_memberships = list(set(user_groups).intersection(permitted_groups))
-                    if allowed_memberships:
-                        self.log.debug(("User '{}' found in the following allowed ldap groups " +
-                                        "{}. Proceeding with authentication.").format(
-                                            username, allowed_memberships))
-                    else:
-                        self.log.error(
-                            "User '{}' is not a member of any permitted groups {}".format(
-                                username, permitted_groups))
-                        return None
-                else:
-                    self.log.debug(("User '{}' will not be verified against allowed_groups due " +
-                                    "to feature short-circuiting. Proceeding with " +
-                                    "authentication.").format(username))
-
-                # return auth results
-                auth_bound = self.test_auth(conn, auth_user_dn, password) or False
-                if auth_bound:
-                    self.log.info(
-                        "User '{}' successfully authenticated against ldap server {}.".format(
-                            username, conn_servers))
-                    auth_response = username
-                else:
-                    self.log.error(
-                        "User '{}' authentication failed against ldap server {}.".format(
-                            conn_servers, auth_user_dn))
-                    auth_response = None
-                return auth_response
+        # verify the user's password by rebinding as them
+        if not self.test_auth(conn, auth_user_dn, password):
+            self.log.error(
+                f"User '{username}' authentication failed against ldap server {conn_servers}."
+            )
+            return None
+        self.log.info(
+            f"User '{username}' successfully authenticated against ldap server {conn_servers}."
+        )
+        return self._build_auth_response(username, search_response.get("attributes"))
