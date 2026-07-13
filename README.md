@@ -144,7 +144,8 @@ c.LDAPAuthenticator.bind_dn_template = [
 | `group_search_base` | Location in the DIT where the nested-group search starts. `{group}` is substituted with entries from `allowed_groups`. | _none_ |
 | `group_search_filter` | LDAP filter returning members of groups in `allowed_groups`. `{group}` is substituted with the group DN. | _none_ |
 | `allowed_groups` | List of group DNs a user must belong to in order to log in. If unset, group scoping is short-circuited and all authenticated users are allowed. | `None` |
-| `allow_nested_groups` | Recursively search for members within nested groups of `allowed_groups`. | `False` |
+| `admin_groups` | List of group DNs whose members are granted JupyterHub admin. Resolved from directory membership on each login (honors `allow_nested_groups`) and is additive with `Authenticator.admin_users`. If unset, admin is left to `admin_users`. | `None` |
+| `allow_nested_groups` | Recursively search for members within nested groups of `allowed_groups` (and `admin_groups`). | `False` |
 | `username_pattern` | Regular expression a valid username must match. If unset, any username is allowed. | `None` |
 
 #### Home directory and auth state parameters
@@ -191,6 +192,7 @@ c.LDAPAuthenticator.user_membership_attribute = 'memberOf'
 c.LDAPAuthenticator.group_search_base = 'cn=groups,cn=accounts,dc=example,dc=com'
 c.LDAPAuthenticator.group_search_filter = '(&(objectClass=ipausergroup)(memberOf={group}))'
 c.LDAPAuthenticator.allowed_groups = ['cn=jupyterhub-users,cn=groups,cn=accounts,dc=example,dc=com']
+c.LDAPAuthenticator.admin_groups = ['cn=jupyterhub-admins,cn=groups,cn=accounts,dc=example,dc=com']
 c.LDAPAuthenticator.allow_nested_groups = True
 c.LDAPAuthenticator.username_pattern = '[a-zA-Z0-9_.][a-zA-Z0-9_.-]{0,252}[a-zA-Z0-9_.$-]?'
 c.LDAPAuthenticator.create_user_home_dir = True
