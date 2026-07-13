@@ -1,6 +1,6 @@
 # Proposal: Grant JupyterHub admin from an LDAP group
 
-**Status:** Proposed (not yet implemented)
+**Status:** Implemented (via the `admin_groups` trait)
 **Tracking issue:** [#18](https://github.com/hansohn/jupyterhub-ldap-authenticator/issues/18)
 **Scope owner:** TBD
 
