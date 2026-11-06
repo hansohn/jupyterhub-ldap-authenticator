@@ -21,7 +21,7 @@ TEST_DIR := tests
 # python
 #-------------------------------------------------------------------------------
 
-PYTHON_VERSION ?= 3.12
+PYTHON_VERSION ?= 3.14
 
 # -- python venv --
 VIRTUALENV_DIR ?= .venv
