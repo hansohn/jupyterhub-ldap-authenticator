@@ -1,0 +1,22 @@
+---
+# Groups auto-generated release notes by pull request label. An unlabeled
+# pull request appears under Other Changes.
+changelog:
+  exclude:
+    labels:
+      - duplicate
+      - invalid
+      - wontfix
+  categories:
+    - title: Features
+      labels:
+        - enhancement
+    - title: Bug Fixes
+      labels:
+        - bug
+    - title: Documentation
+      labels:
+        - documentation
+    - title: Other Changes
+      labels:
+        - '*'

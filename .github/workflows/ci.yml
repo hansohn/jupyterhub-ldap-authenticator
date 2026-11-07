@@ -1,0 +1,56 @@
+---
+name: ci
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+# Cancel superseded runs for the same ref.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # renovate: datasource=pypi depName=yamllint
+  YAMLLINT_VERSION: '1.38.0'
+  # renovate: datasource=github-releases depName=rhysd/actionlint extractVersion=^v(?<version>.*)$
+  ACTIONLINT_VERSION: '1.7.12'
+  # renovate: datasource=pypi depName=zizmor
+  ZIZMOR_VERSION: '1.31.1'
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install linters
+        run: |
+          # The runner image ships its own yamllint, so install the pinned
+          # version into a separate pipx home and put it first on PATH.
+          bin_dir="${RUNNER_TEMP}/bin"
+          PIPX_HOME="${RUNNER_TEMP}/pipx" PIPX_BIN_DIR="${bin_dir}" \
+            pipx install "yamllint==${YAMLLINT_VERSION}"
+          PIPX_HOME="${RUNNER_TEMP}/pipx" PIPX_BIN_DIR="${bin_dir}" \
+            pipx install "zizmor==${ZIZMOR_VERSION}"
+          script_url="https://raw.githubusercontent.com/rhysd/actionlint/v${ACTIONLINT_VERSION}/scripts/download-actionlint.bash"
+          bash <(curl -fsSL "${script_url}") "${ACTIONLINT_VERSION}" "${bin_dir}"
+          echo "${bin_dir}" >> "$GITHUB_PATH"
+
+      - name: Lint
+        run: make lint/ci
+        env:
+          # zizmor runs its online audits (known-vulnerable-actions,
+          # impostor-commit) only when a token is set.
+          GH_TOKEN: ${{ github.token }}

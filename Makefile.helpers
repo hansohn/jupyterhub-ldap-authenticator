@@ -4,18 +4,20 @@
 
 EDITOR ?= vim
 
-SHELL = /bin/bash
-
-DEFAULT_HELP_TARGET ?= help/short
 HELP_FILTER ?= .*
 
-green = $(shell echo -e '\x1b[32;01m$1\x1b[0m')
-yellow = $(shell echo -e '\x1b[33;01m$1\x1b[0m')
-red = $(shell echo -e '\x1b[33;31m$1\x1b[0m')
+# Color definitions - more efficient than shell calls
+GREEN := \x1b[32;01m
+YELLOW := \x1b[33;01m
+RED := \x1b[31;01m
+RESET := \x1b[0m
+
+# Declare phony targets
+.PHONY: help help/all help/short help/generate test/assert test/assert-set test/assert-unset
 
 # Ensures that a variable is defined and non-empty
 define assert-set
-  @$(if $($(1)),,$(error $(1) not defined in $(@)))
+  @$(if $(value $(1)),,$(error $(1) not defined))
 endef
 
 # Ensures that a variable is undefined
@@ -32,9 +34,6 @@ test/assert-unset:
 	@echo assert-unset PASS
 
 test/assert: test/assert-set test/assert-unset
-	@exit 0
-
-default:: $(DEFAULT_HELP_TARGET)
 	@exit 0
 
 ## Help screen
@@ -55,14 +54,14 @@ help/short:
 # Generate help output from MAKEFILE_LIST
 help/generate:
 	@awk '/^[a-zA-Z\_0-9%:\\\/-]+:/ { \
-	  helpMessage = match(lastLine, /^## (.*)/); \
-	  if (helpMessage) { \
-	    helpCommand = $$1; \
-	    helpMessage = substr(lastLine, RSTART + 3, RLENGTH); \
-      gsub("\\\\", "", helpCommand); \
-      gsub(":+$$", "", helpCommand); \
-	    printf "  \x1b[32;01m%-35s\x1b[0m %s\n", helpCommand, helpMessage; \
-	  } \
+	    helpMessage = match(lastLine, /^## (.*)/); \
+	    if (helpMessage) { \
+	        helpCommand = $$1; \
+	        helpMessage = substr(lastLine, RSTART + 3, RLENGTH); \
+	        gsub("\\\\", "", helpCommand); \
+	        gsub(":+$$", "", helpCommand); \
+	        printf "  \x1b[32;01m%-35s\x1b[0m %s\n", helpCommand, helpMessage; \
+	    } \
 	} \
 	{ lastLine = $$0 }' $(MAKEFILE_LIST) | sort -u
 	@printf "\n"

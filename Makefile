@@ -116,6 +116,27 @@ lint/mypy: $(SRC_DIR)
 	@$(VIRTUALENV_BIN_DIR)/mypy $(SRC_DIR)
 .PHONY: lint/mypy
 
+## Lint YAML files
+lint/yaml:
+	@command -v yamllint > /dev/null 2>&1 || (echo "[ERROR] yamllint is not installed." && exit 1)
+	@echo "[INFO] Linting YAML files in '$(REPO_NAME)'."
+	@yamllint --strict .
+.PHONY: lint/yaml
+
+## Lint and audit GitHub Actions workflows
+lint/actions:
+	@command -v actionlint > /dev/null 2>&1 || (echo "[ERROR] actionlint is not installed." && exit 1)
+	@command -v zizmor > /dev/null 2>&1 || (echo "[ERROR] zizmor is not installed." && exit 1)
+	@echo "[INFO] Linting GitHub Actions workflows in '$(REPO_NAME)'."
+	@actionlint
+	@echo "[INFO] Auditing GitHub Actions workflows in '$(REPO_NAME)'."
+	@zizmor .
+.PHONY: lint/actions
+
+## Run the YAML and workflow linters (no Python venv needed)
+lint/ci: lint/yaml lint/actions
+.PHONY: lint/ci
+
 ## Run ruff lint, ruff format check, and mypy
 lint: lint/ruff lint/ruff-format lint/mypy
 .PHONY: lint

@@ -1,0 +1,12 @@
+---
+extends: default
+
+# Skip the virtualenv, build output and caches.
+ignore-from-file: .gitignore
+
+rules:
+  line-length:
+    max: 120
+  # GitHub Actions uses 'on' as a key.
+  truthy:
+    check-keys: false
