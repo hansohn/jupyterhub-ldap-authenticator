@@ -232,6 +232,116 @@ def test_auth_state_direct_bind(make_authenticator):
 
 
 # ---------------------------------------------------------------------------
+# admin_groups (issue #18)
+# ---------------------------------------------------------------------------
+
+
+ADMIN_GROUP = "cn=jupyterhub-admins,ou=groups,dc=example,dc=org"
+
+
+def test_admin_group_grants_admin_search_bind(make_authenticator):
+    auth = make_authenticator(
+        alice_directory(groups=[ADMIN_GROUP]),
+        bind_user_dn="cn=svc,dc=example,dc=org",
+        bind_user_password="svcpass",
+        user_search_base=USER_BASE,
+        user_search_filter="(uid={username})",
+        admin_groups=[ADMIN_GROUP],
+    )
+    result = run(auth.authenticate(None, {"username": "alice", "password": "secret"}))
+    assert result == {"name": "alice", "admin": True}
+
+
+def test_admin_group_grants_admin_direct_bind(make_authenticator):
+    auth = make_authenticator(
+        alice_directory(groups=[ADMIN_GROUP]),
+        direct_bind=True,
+        bind_dn_template="uid={username},ou=people,dc=example,dc=org",
+        admin_groups=[ADMIN_GROUP],
+    )
+    result = run(auth.authenticate(None, {"username": "alice", "password": "secret"}))
+    assert result == {"name": "alice", "admin": True}
+
+
+def test_non_admin_user_gets_admin_false(make_authenticator):
+    # a valid user not in any admin group is explicitly demoted (admin=False),
+    # which lets the directory demote a user the static list can't
+    auth = make_authenticator(
+        alice_directory(groups=["cn=other,ou=groups,dc=example,dc=org"]),
+        bind_user_dn="cn=svc,dc=example,dc=org",
+        bind_user_password="svcpass",
+        user_search_base=USER_BASE,
+        user_search_filter="(uid={username})",
+        admin_groups=[ADMIN_GROUP],
+    )
+    result = run(auth.authenticate(None, {"username": "alice", "password": "secret"}))
+    assert result == {"name": "alice", "admin": False}
+
+
+def test_admin_via_nested_group(make_authenticator):
+    child = "cn=child-admins,ou=groups,dc=example,dc=org"
+    auth = make_authenticator(
+        alice_directory(groups=[child], nested={ADMIN_GROUP: [child]}),
+        bind_user_dn="cn=svc,dc=example,dc=org",
+        bind_user_password="svcpass",
+        user_search_base=USER_BASE,
+        user_search_filter="(uid={username})",
+        group_search_base=GROUP_BASE,
+        group_search_filter="(memberOf={group})",
+        admin_groups=[ADMIN_GROUP],
+        allow_nested_groups=True,
+    )
+    result = run(auth.authenticate(None, {"username": "alice", "password": "secret"}))
+    assert result == {"name": "alice", "admin": True}
+
+
+def test_admin_users_additive_with_admin_groups(make_authenticator):
+    # a user not in any admin group but listed in the static admin_users stays
+    # admin (admin_groups is additive, not authoritative)
+    auth = make_authenticator(
+        alice_directory(groups=["cn=other,ou=groups,dc=example,dc=org"]),
+        bind_user_dn="cn=svc,dc=example,dc=org",
+        bind_user_password="svcpass",
+        user_search_base=USER_BASE,
+        user_search_filter="(uid={username})",
+        admin_groups=[ADMIN_GROUP],
+        admin_users={"alice"},
+    )
+    result = run(auth.authenticate(None, {"username": "alice", "password": "secret"}))
+    assert result == {"name": "alice", "admin": True}
+
+
+def test_admin_groups_unset_leaves_return_unchanged(make_authenticator):
+    # backward compatibility: without admin_groups, the bare username is returned
+    auth = make_authenticator(
+        alice_directory(groups=[ADMIN_GROUP]),
+        bind_user_dn="cn=svc,dc=example,dc=org",
+        bind_user_password="svcpass",
+        user_search_base=USER_BASE,
+        user_search_filter="(uid={username})",
+    )
+    assert run(auth.authenticate(None, {"username": "alice", "password": "secret"})) == "alice"
+
+
+def test_admin_groups_combines_with_auth_state(make_authenticator):
+    auth = make_authenticator(
+        alice_directory(groups=[ADMIN_GROUP], extra_attributes={"mail": ["alice@example.org"]}),
+        bind_user_dn="cn=svc,dc=example,dc=org",
+        bind_user_password="svcpass",
+        user_search_base=USER_BASE,
+        user_search_filter="(uid={username})",
+        admin_groups=[ADMIN_GROUP],
+        auth_state_attributes=["mail"],
+    )
+    result = run(auth.authenticate(None, {"username": "alice", "password": "secret"}))
+    assert result == {
+        "name": "alice",
+        "auth_state": {"mail": ["alice@example.org"]},
+        "admin": True,
+    }
+
+
+# ---------------------------------------------------------------------------
 # input validation
 # ---------------------------------------------------------------------------
 

@@ -21,7 +21,7 @@ TEST_DIR := tests
 # python
 #-------------------------------------------------------------------------------
 
-PYTHON_VERSION ?= 3.12
+PYTHON_VERSION ?= 3.14
 
 # -- python venv --
 VIRTUALENV_DIR ?= .venv
@@ -165,9 +165,6 @@ DOCKER_TAG_BASE ?= $(DOCKER_USER)/$(DOCKER_REPO)
 DOCKER_TAGS ?=
 DOCKER_TAGS += --tag $(DOCKER_TAG_BASE):$(GIT_HASH)
 ifeq ($(GIT_BRANCH), main)
-DOCKER_TAGS += --tag $(DOCKER_TAG_BASE):latest
-endif
-ifeq ($(GIT_BRANCH), master)
 DOCKER_TAGS += --tag $(DOCKER_TAG_BASE):latest
 endif
 

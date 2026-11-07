@@ -322,6 +322,23 @@ class LDAPAuthenticator(Authenticator):
         """,
     )
 
+    admin_groups = Union(
+        [Unicode(), List()],
+        allow_none=True,
+        default_value=None,
+        config=True,
+        help="""
+        List of LDAP group DNs whose members are granted JupyterHub admin rights.
+        Admin status is resolved from directory membership on each login (honoring
+        `allow_nested_groups`) and is additive with `Authenticator.admin_users`: a
+        user is an admin if they are listed in `admin_users` or belong to one of
+        these groups. When set, `authenticate()` returns a dict carrying an
+        `admin` flag, so a user removed from every admin group is demoted on their
+        next login (unless they are also listed in the static `admin_users`).
+        Defaults to None (feature disabled).
+        """,
+    )
+
     auth_state_attributes = List(
         Unicode(),
         config=True,
@@ -585,21 +602,31 @@ class LDAPAuthenticator(Authenticator):
         configured auth_state_attributes.
         """
         attributes = set()
-        if self.allowed_groups:
+        if self.allowed_groups or self.admin_groups:
             attributes.add(self.user_membership_attribute)
         attributes.update(self.auth_state_attributes)
         return list(attributes)
 
-    def _build_auth_response(self, username: str, attributes: dict | None) -> str | dict:
+    def _build_auth_response(
+        self, username: str, attributes: dict | None, admin: bool | None = None
+    ) -> str | dict:
         """
         Build the authenticate() return value, attaching an auth_state mapping of
-        the configured auth_state_attributes when requested.
+        the configured auth_state_attributes and/or an `admin` flag when
+        requested. Returns the bare username when neither is in play, preserving
+        backward-compatible behavior.
         """
-        if not self.auth_state_attributes:
+        if not self.auth_state_attributes and admin is None:
             return username
-        attributes = attributes or {}
-        auth_state = {attr: attributes.get(attr) for attr in self.auth_state_attributes}
-        return {"name": username, "auth_state": auth_state}
+        response: dict = {"name": username}
+        if self.auth_state_attributes:
+            attributes = attributes or {}
+            response["auth_state"] = {
+                attr: attributes.get(attr) for attr in self.auth_state_attributes
+            }
+        if admin is not None:
+            response["admin"] = admin
+        return response
 
     def _read_user_attributes(
         self, conn: ldap3.Connection, auth_user_dn: str, attributes: list[str]
@@ -619,6 +646,21 @@ class LDAPAuthenticator(Authenticator):
             return conn.response[0]["attributes"]
         return None
 
+    def _expand_groups(self, conn: ldap3.Connection, groups: str | list[str] | None) -> list[str]:
+        """
+        Normalize a group config value (Union of str or list) to a list and
+        expand nested groups when `allow_nested_groups` is enabled.
+        """
+        if groups is None:
+            return []
+        if isinstance(groups, str):
+            groups = [groups]
+        expanded = list(groups)
+        if self.allow_nested_groups:
+            for group in list(expanded):
+                expanded.extend(self.get_nested_groups(conn, group))
+        return expanded
+
     def _user_allowed(
         self,
         conn: ldap3.Connection,
@@ -629,15 +671,7 @@ class LDAPAuthenticator(Authenticator):
         Return True if the user's groups intersect allowed_groups (expanding
         nested groups when enabled). Shared by both authentication strategies.
         """
-        # normalize allowed_groups (Union of str or list) and expand nested groups
-        permitted_groups = self.allowed_groups
-        if isinstance(permitted_groups, str):
-            permitted_groups = [permitted_groups]
-        permitted_groups = list(permitted_groups)
-        if self.allow_nested_groups:
-            for group in list(permitted_groups):
-                permitted_groups.extend(self.get_nested_groups(conn, group))
-
+        permitted_groups = self._expand_groups(conn, self.allowed_groups)
         allowed_memberships = list(set(user_groups or []).intersection(permitted_groups))
         if allowed_memberships:
             self.log.debug(
@@ -649,6 +683,32 @@ class LDAPAuthenticator(Authenticator):
             f"User '{username}' is not a member of any permitted groups {permitted_groups}."
         )
         return False
+
+    def _resolve_admin(
+        self,
+        conn: ldap3.Connection,
+        username: str,
+        user_groups: list[str] | None,
+    ) -> bool | None:
+        """
+        Resolve JupyterHub admin status from LDAP group membership. Returns None
+        when `admin_groups` is not configured (leaving the return value
+        unchanged), otherwise a bool that is additive with the static
+        `admin_users`: True if the user is listed in `admin_users` or belongs to
+        an admin group (nested-expanded when enabled), False otherwise.
+        """
+        if not self.admin_groups:
+            return None
+        admin_groups = self._expand_groups(conn, self.admin_groups)
+        admin_memberships = list(set(user_groups or []).intersection(admin_groups))
+        is_admin = username in self.admin_users or bool(admin_memberships)
+        if admin_memberships:
+            self.log.debug(f"User '{username}' granted admin via ldap groups {admin_memberships}.")
+        elif is_admin:
+            self.log.debug(f"User '{username}' granted admin via static admin_users.")
+        else:
+            self.log.debug(f"User '{username}' is not a member of any admin groups.")
+        return is_admin
 
     def _authenticate_direct_bind(
         self,
@@ -692,15 +752,15 @@ class LDAPAuthenticator(Authenticator):
             )
 
             # optional group membership enforcement
-            if self.allowed_groups and not self._user_allowed(
-                conn, username, user_attributes.get(self.user_membership_attribute)
-            ):
+            user_groups = user_attributes.get(self.user_membership_attribute)
+            if self.allowed_groups and not self._user_allowed(conn, username, user_groups):
                 conn.unbind()
                 return None
 
+            admin = self._resolve_admin(conn, username, user_groups)
             conn.unbind()
             attributes = user_attributes if self.auth_state_attributes else None
-            return self._build_auth_response(username, attributes)
+            return self._build_auth_response(username, attributes, admin)
 
         self.log.error(
             f"User '{username}' authentication failed against ldap "
@@ -829,11 +889,10 @@ class LDAPAuthenticator(Authenticator):
             conn.unbind()
             return None
 
+        user_groups = (search_response.get("attributes") or {}).get(self.user_membership_attribute)
+
         # enforce group membership before verifying the password
         if self.allowed_groups:
-            user_groups = (search_response.get("attributes") or {}).get(
-                self.user_membership_attribute
-            )
             if not user_groups:
                 self.log.error(
                     f"Search results for user '{username}' returned no "
@@ -845,6 +904,11 @@ class LDAPAuthenticator(Authenticator):
                 conn.unbind()
                 return None
 
+        # resolve admin status from group membership (no-op unless admin_groups
+        # is configured); done before the rebind while still bound as the service
+        # account, since the rebind unbinds the connection
+        admin = self._resolve_admin(conn, username, user_groups)
+
         # verify the user's password by rebinding as them
         if not self.test_auth(conn, auth_user_dn, password):
             self.log.error(
@@ -854,4 +918,4 @@ class LDAPAuthenticator(Authenticator):
         self.log.info(
             f"User '{username}' successfully authenticated against ldap server {conn_servers}."
         )
-        return self._build_auth_response(username, search_response.get("attributes"))
+        return self._build_auth_response(username, search_response.get("attributes"), admin)
