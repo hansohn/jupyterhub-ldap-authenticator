@@ -2,21 +2,24 @@
 name: ci
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
+    tags:
+      - 'v?[0-9]+.[0-9]+.[0-9]+'
   pull_request:
-  workflow_dispatch:
 
-# Cancel superseded runs for the same ref.
+# Cancel superseded runs for the same ref, but never a tag (release) run.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
 
 permissions:
   contents: read
 
 env:
+  PYTHON_VERSION: '3.14'
   # renovate: datasource=pypi depName=yamllint
   YAMLLINT_VERSION: '1.38.0'
   # renovate: datasource=github-releases depName=rhysd/actionlint extractVersion=^v(?<version>.*)$
@@ -25,8 +28,8 @@ env:
   ZIZMOR_VERSION: '1.31.1'
 
 jobs:
-  lint:
-    name: Lint
+  lint-ci:
+    name: Lint workflows
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -54,3 +57,147 @@ jobs:
           # zizmor runs its online audits (known-vulnerable-actions,
           # impostor-commit) only when a token is set.
           GH_TOKEN: ${{ github.token }}
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          # setuptools-scm derives the version from git tags.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: make venv
+
+      - name: Lint
+        run: make lint
+
+  test:
+    name: Test (py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version:
+          - '3.10'
+          - '3.11'
+          - '3.12'
+          - '3.13'
+          - '3.14'
+    env:
+      PYTHON_VERSION: ${{ matrix.python-version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: make venv
+
+      - name: Test
+        run: make test
+
+  build:
+    name: Build
+    needs:
+      - lint-ci
+      - lint
+      - test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Build package
+        run: make build
+
+      - name: Check package metadata
+        run: make upload/check
+
+      - name: Upload dist
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  deploy:
+    name: Publish to PyPI
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    needs:
+      - build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: pypi
+      url: https://pypi.org/project/jupyterhub-ldap-authenticator/
+    permissions:
+      # Required for PyPI trusted publishing (OIDC).
+      id-token: write
+    steps:
+      - name: Download dist
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish package
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086  # v1.14.3
+
+  slack:
+    name: Notify Slack
+    # Secrets are unavailable to fork PRs, so skip the notification there.
+    if: >-
+      always() &&
+      github.event.pull_request.head.repo.fork != true
+    needs:
+      - lint-ci
+      - lint
+      - test
+      - build
+      - deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Slack Notification
+        uses: Gamesight/slack-workflow-status@2e709ce51fd47f02b7221db8547e6e6f49f81f1d  # v2.0.0
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          slack_webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+          channel: ${{ secrets.SLACK_CHANNEL_ID }}
+          name: ${{ secrets.SLACK_USERNAME }}
+          icon_url: "https://cdn-icons-png.flaticon.com/512/25/25231.png"

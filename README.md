@@ -3,7 +3,7 @@
   <p>LDAP Authenticator plugin for JupyterHub</p>
   <p>
     <!-- CI -->
-    <a href="https://github.com/hansohn/jupyterhub-ldap-authenticator/actions/workflows/python.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/hansohn/jupyterhub-ldap-authenticator/python.yml?branch=main&label=CI&style=for-the-badge"></a>
+    <a href="https://github.com/hansohn/jupyterhub-ldap-authenticator/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/hansohn/jupyterhub-ldap-authenticator/ci.yml?branch=main&label=CI&style=for-the-badge"></a>
     <!-- PyPI -->
     <a href="https://pypi.org/project/jupyterhub-ldap-authenticator/"><img alt="PyPI" src="https://img.shields.io/pypi/v/jupyterhub-ldap-authenticator.svg?style=for-the-badge"></a>
     <!-- License -->
