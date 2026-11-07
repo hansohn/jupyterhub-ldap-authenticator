@@ -1,51 +1,28 @@
 <div align="center">
-  <h3>jupyterhub-ldap-authenticator</h3>
+  <h1>jupyterhub-ldap-authenticator</h1>
   <p>LDAP Authenticator plugin for JupyterHub</p>
   <p>
-    <!-- Build Status -->
-    <a href="https://github.com/hansohn/jupyterhub-ldap-authenticator/actions/workflows/python.yml">
-      <img src="https://img.shields.io/github/actions/workflow/status/hansohn/jupyterhub-ldap-authenticator/python.yml?branch=main&style=for-the-badge">
-    </a>
+    <!-- CI -->
+    <a href="https://github.com/hansohn/jupyterhub-ldap-authenticator/actions/workflows/python.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/hansohn/jupyterhub-ldap-authenticator/python.yml?branch=main&label=CI&style=for-the-badge"></a>
     <!-- PyPI -->
-    <a href="https://pypi.org/project/jupyterhub-ldap-authenticator/">
-      <img src="https://img.shields.io/pypi/v/jupyterhub-ldap-authenticator.svg?style=for-the-badge">
-    </a>
+    <a href="https://pypi.org/project/jupyterhub-ldap-authenticator/"><img alt="PyPI" src="https://img.shields.io/pypi/v/jupyterhub-ldap-authenticator.svg?style=for-the-badge"></a>
     <!-- License -->
-    <a href="https://github.com/hansohn/jupyterhub-ldap-authenticator/blob/main/LICENSE">
-      <img src="https://img.shields.io/github/license/hansohn/jupyterhub-ldap-authenticator.svg?style=for-the-badge">
-    </a>
+    <a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/hansohn/jupyterhub-ldap-authenticator?style=for-the-badge"></a>
+  </p>
+  <p>
+    <a href="#installation">Installation</a> •
+    <a href="#configuration">Configuration</a> •
+    <a href="#examples">Examples</a> •
+    <a href="#development">Development</a> •
+    <a href="#contributing">Contributing</a>
   </p>
 </div>
 
-### Contents
-
-- [Description](#description)
-- [Installation](#installation)
-- [Configuration](#configuration)
-  - [Authentication strategy](#authentication-strategy)
-  - [Server parameters](#server-parameters)
-  - [Bind parameters](#bind-parameters)
-  - [User and group parameters](#user-and-group-parameters)
-  - [Home directory and auth state parameters](#home-directory-and-auth-state-parameters)
-- [Examples](#examples)
-- [Directory compatibility](#directory-compatibility)
-- [Multi-factor authentication](#multi-factor-authentication)
-- [Migrating from 0.x](#migrating-from-0x)
-- [Development](#development)
-- [License](#license)
-
-### Description
+## Overview
 
 An LDAP [Authenticator](https://jupyterhub.readthedocs.io/en/stable/reference/authenticators.html)
 plugin for [JupyterHub](https://github.com/jupyterhub/jupyterhub), written with
-Enterprise LDAP and Active Directory integration in mind. It supports:
-
-- Multiple LDAP servers with configurable high-availability pooling (`server_pool_strategy`)
-- Search-bind authentication using a service account, **or** direct-bind via `bind_dn_template`
-- Modern TLS negotiation (`server_tls_strategy`: `before_bind` / `on_connect` / `insecure`)
-- Group-based access control with `allowed_groups`, including recursive **nested group** resolution
-- Automatic creation of a user's home directory at login
-- Exposing selected LDAP attributes to JupyterHub as `auth_state`
+Enterprise LDAP and Active Directory integration in mind.
 
 > **Which LDAP authenticator should I use?**
 > The JupyterHub organization maintains an official
@@ -55,7 +32,22 @@ Enterprise LDAP and Active Directory integration in mind. It supports:
 > **multi-server failover pooling**, or **nested-group resolution**. For simpler
 > deployments, the official package is an excellent choice.
 
-### Installation
+## Highlights
+
+- **High availability** // Multiple LDAP servers with configurable pooling (`server_pool_strategy`)
+- **Flexible binding** // Search-bind with a service account, **or** direct-bind via `bind_dn_template`
+- **Modern TLS** // `server_tls_strategy`: `before_bind` / `on_connect` / `insecure`
+- **Group access control** // `allowed_groups`, including recursive **nested group** resolution
+- **Home directories** // Created automatically at login
+- **Auth state** // Selected LDAP attributes exposed to JupyterHub as `auth_state`
+
+## Prerequisites
+
+- Python 3.10 or newer
+- JupyterHub 2.0.0 or newer
+- An LDAP or Active Directory server reachable from the hub
+
+## Installation
 
 Install with pip:
 
@@ -63,7 +55,7 @@ Install with pip:
 pip install jupyterhub-ldap-authenticator
 ```
 
-### Configuration
+## Configuration
 
 To enable `LDAPAuthenticator`, add the following to your JupyterHub config file and
 extend it with the parameters below.
@@ -72,7 +64,7 @@ extend it with the parameters below.
 c.JupyterHub.authenticator_class = 'ldapauthenticator.LDAPAuthenticator'
 ```
 
-#### Authentication strategy
+### Authentication strategy
 
 This plugin supports two authentication strategies:
 
@@ -86,7 +78,7 @@ This plugin supports two authentication strategies:
 
 Fully worked configurations for each strategy are in [Examples](#examples).
 
-#### Server parameters
+### Server parameters
 
 | Parameter | Description | Default |
 | --- | --- | --- |
@@ -117,7 +109,7 @@ Fully worked configurations for each strategy are in [Examples](#examples).
 > }
 > ```
 
-#### Bind parameters
+### Bind parameters
 
 | Parameter | Description | Default |
 | --- | --- | --- |
@@ -134,7 +126,7 @@ c.LDAPAuthenticator.bind_dn_template = [
 ]
 ```
 
-#### User and group parameters
+### User and group parameters
 
 | Parameter | Description | Default |
 | --- | --- | --- |
@@ -148,7 +140,7 @@ c.LDAPAuthenticator.bind_dn_template = [
 | `allow_nested_groups` | Recursively search for members within nested groups of `allowed_groups` (and `admin_groups`). | `False` |
 | `username_pattern` | Regular expression a valid username must match. If unset, any username is allowed. | `None` |
 
-#### Home directory and auth state parameters
+### Home directory and auth state parameters
 
 | Parameter | Description | Default |
 | --- | --- | --- |
@@ -176,9 +168,9 @@ c.LDAPAuthenticator.auth_state_attributes = ['mail', 'displayName']
 > the JupyterHub process runs as, so it must have permission to create accounts
 > (typically root).
 
-### Examples
+## Examples
 
-#### FreeIPA Integration
+### FreeIPA Integration
 
 ```python
 # freeipa example
@@ -199,7 +191,7 @@ c.LDAPAuthenticator.create_user_home_dir = True
 c.LDAPAuthenticator.create_user_home_dir_cmd = ['mkhomedir_helper']
 ```
 
-#### Active Directory Integration
+### Active Directory Integration
 
 ```python
 # active directory example
@@ -219,7 +211,7 @@ c.LDAPAuthenticator.create_user_home_dir = True
 c.LDAPAuthenticator.create_user_home_dir_cmd = ['mkhomedir_helper']
 ```
 
-#### OpenLDAP Integration (direct-bind)
+### OpenLDAP Integration (direct-bind)
 
 Because OpenLDAP does not natively populate the `memberOf` attribute on user
 objects, `allowed_groups` scoping is short-circuited below. This example also
@@ -235,7 +227,7 @@ c.LDAPAuthenticator.create_user_home_dir = True
 c.LDAPAuthenticator.create_user_home_dir_cmd = ['mkhomedir_helper']
 ```
 
-### Directory compatibility
+## Directory compatibility
 
 This authenticator uses an LDAP **simple bind** (username/DN + password) over an
 optionally TLS-secured connection, and resolves groups from a `memberOf`-style
@@ -256,7 +248,7 @@ Rule of thumb: if the directory accepts an LDAP **simple bind over TLS** and
 exposes a **`memberOf`-like attribute**, it is compatible. Kerberos-only realms
 and proprietary APIs are not.
 
-### Multi-factor authentication
+## Multi-factor authentication
 
 This plugin does not implement MFA as a first-class feature — there is no
 separate OTP field, challenge-response step, or push handling (JupyterHub's login
@@ -278,7 +270,7 @@ directory that validates the appended code at bind time:
 In other words, MFA is a property of the directory that this plugin's
 pass-through bind preserves, rather than something the plugin performs itself.
 
-### Migrating from 0.x
+## Migrating from 0.x
 
 Version 1.0 is backward compatible — existing configurations continue to work.
 Two changes are worth noting:
@@ -290,18 +282,38 @@ Two changes are worth noting:
   set `server_tls_strategy = 'insecure'` explicitly.
 - The authenticator is now `async`, requiring **JupyterHub >= 2.0** and **Python >= 3.10**.
 
-### Development
+## Development
 
 This project uses a `Makefile` to drive common tasks. Run `make help` for the
 full list.
 
 ```bash
-make venv     # create a virtualenv and install dependencies
-make lint     # run ruff (lint + format check) and mypy
-make test     # run the pytest suite
-make build    # build the sdist/wheel package
+make help       # list targets
+make venv       # create a virtualenv and install dependencies
+make lint       # run ruff (lint + format check) and mypy
+make lint/ci    # run yamllint, actionlint and zizmor
+make test       # run the pytest suite
+make build      # build the sdist/wheel package
 ```
 
-### License
+> [!TIP]
+> Add a `## Help text` comment above a target to list it in `make help`.
 
-[MIT](LICENSE)
+## Security
+
+To report a vulnerability, see the [Security Policy](https://github.com/hansohn/.github/blob/HEAD/SECURITY.md).
+Do not open a public issue.
+
+## Contributing
+
+Contributions are welcome. See the [Contributing Guide](https://github.com/hansohn/.github/blob/HEAD/CONTRIBUTING.md)
+for the full workflow.
+
+- Report bugs via [Bug Reports](https://github.com/hansohn/jupyterhub-ldap-authenticator/issues/new?template=bug-report.yml)
+- Request features via [Feature Requests](https://github.com/hansohn/jupyterhub-ldap-authenticator/issues/new?template=feature-request.yml)
+- Ask for help via [Support Requests](https://github.com/hansohn/jupyterhub-ldap-authenticator/issues/new?template=support-request.yml)
+- Follow the [Code of Conduct](https://github.com/hansohn/.github/blob/HEAD/CODE_OF_CONDUCT.md)
+
+## License
+
+MIT. See [LICENSE](LICENSE).
