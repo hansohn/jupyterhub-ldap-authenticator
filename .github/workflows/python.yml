@@ -47,6 +47,27 @@ jobs:
       - name: Build package
         run: make build
 
+  # Early warning for the next Python release. A failure here does not block the pipeline.
+  test-next-python:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    env:
+      PYTHON_VERSION: 3.15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Set up Python
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y software-properties-common jq make
+          sudo add-apt-repository ppa:deadsnakes/ppa
+          sudo apt-get install --no-install-recommends -y python${PYTHON_VERSION} python${PYTHON_VERSION}-venv python3-pip
+      - name: Install dependencies
+        run: make venv
+      - name: Test everything
+        run: make test
+
   deploy:
     if: github.event_name == 'push' && github.ref_type == 'tag'
     needs:

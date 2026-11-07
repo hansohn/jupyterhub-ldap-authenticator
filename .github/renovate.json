@@ -13,5 +13,12 @@
     "github-actions",
     "dockerfile",
     "docker-compose"
+  ],
+  "packageRules": [
+    {
+      "description": "Python 3.15 is tested in CI only. Do not propose it as the baseline.",
+      "matchPackageNames": ["python"],
+      "allowedVersions": "<3.15"
+    }
   ]
 }
