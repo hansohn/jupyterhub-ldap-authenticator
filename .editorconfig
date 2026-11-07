@@ -18,8 +18,3 @@ indent_size = 4
 [*.md]
 # Two trailing spaces are a Markdown line break.
 trim_trailing_whitespace = false
-
-[.gitignore]
-# The macOS "Icon\r\r" pattern needs its literal carriage returns.
-end_of_line = unset
-trim_trailing_whitespace = unset
