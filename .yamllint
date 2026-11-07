@@ -1,0 +1,9 @@
+---
+extends: default
+
+rules:
+  line-length:
+    max: 120
+  # GitHub Actions uses 'on' as a key.
+  truthy:
+    check-keys: false
