@@ -1,0 +1,25 @@
+# https://editorconfig.org
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+indent_size = 2
+indent_style = space
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[{Makefile,Makefile.*,*.mk}]
+indent_style = tab
+
+[*.py]
+indent_size = 4
+
+[*.md]
+# Two trailing spaces are a Markdown line break.
+trim_trailing_whitespace = false
+
+[.gitignore]
+# The macOS "Icon\r\r" pattern needs its literal carriage returns.
+end_of_line = unset
+trim_trailing_whitespace = unset
