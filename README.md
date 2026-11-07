@@ -7,7 +7,7 @@
     <!-- PyPI -->
     <a href="https://pypi.org/project/jupyterhub-ldap-authenticator/"><img alt="PyPI" src="https://img.shields.io/pypi/v/jupyterhub-ldap-authenticator.svg?style=for-the-badge"></a>
     <!-- License -->
-    <a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/hansohn/jupyterhub-ldap-authenticator?style=for-the-badge"></a>
+    <a href="https://github.com/hansohn/jupyterhub-ldap-authenticator/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/github/license/hansohn/jupyterhub-ldap-authenticator?style=for-the-badge"></a>
   </p>
   <p>
     <a href="#installation">Installation</a> •
